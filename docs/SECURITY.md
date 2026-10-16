@@ -47,6 +47,14 @@ RLS is **enabled on all 14 tables** and no table has a permissive `using
 `set search_path` to avoid search-path hijacking. They are the only functions
 granted to `anon`/`authenticated` besides the RPC entry points.
 
+**Function grants** are locked down explicitly. Postgres grants `EXECUTE` on
+new functions to the `PUBLIC` pseudo-role, which every role inherits — so
+revoking from `anon` alone is *not* enough to keep signed-out callers out of
+the API. The migrations revoke `EXECUTE` from `PUBLIC` (and from `anon` /
+`authenticated`) before re-granting only the intended entry points, and
+trigger functions are deliberately left ungranted. `npm run db:check` asserts
+this: anonymous callers can reach `preview_invitation` and nothing else.
+
 **Membership requires `status = 'active'.`** Pending or rejected users hold a
 row but fail every family check, so a pending invitee cannot read posts, media
 or chat until an admin approves them.
@@ -128,11 +136,20 @@ Being explicit about what is **not** yet done:
    only the family name/cover — never content. Postgres-side attempt
    throttling is a planned hardening (tracked for M3).
 3. **No 2FA / MFA.** Supabase supports TOTP; it is not enabled in the UI yet.
-4. **No automated security tests yet.** Vitest + Playwright coverage,
-   including RLS assertions (cross-family access must fail), is planned for
-   M3. Until then RLS has been reviewed by hand, not proven by tests.
-5. **Migrations are unapplied.** The policies above are written and reviewed
-   but have not run against a live database; verify them on first setup.
+4. **No automated security tests in CI yet.** Vitest + Playwright coverage
+   (unit + end-to-end against a live project) is planned for M3. The RLS and
+   RPC authorization model *is* currently exercised by
+   `npm run db:check`, which applies the migrations to in-process Postgres
+   (PGlite) and then asserts, acting as the real `anon`/`authenticated` roles,
+   that cross-family reads and writes are refused, that mutating RPCs are
+   unreachable by anonymous callers, that notification triggers fire, and that
+   storage paths are authorized by their first segment. What it is **not** is
+   a test against Supabase's actual platform.
+5. **Migrations are unapplied against real Supabase.** They pass
+   `npm run db:check`, but the stubs in
+   [`scripts/pglite/supabase-stubs.sql`](../scripts/pglite/supabase-stubs.sql)
+   approximate Supabase's `auth`/`storage` schemas and default grants.
+   Re-verify after applying them to a real project.
 6. **Hand-written database types.** `src/types/database.types.ts` is manual
    and can drift from the schema. Regenerate with
    `supabase gen types typescript --linked` once the CLI is linked.

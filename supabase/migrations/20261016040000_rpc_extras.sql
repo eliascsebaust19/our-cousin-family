@@ -46,6 +46,9 @@ create trigger conversations_bump_activity
   after insert on public.messages
   for each row execute function public.bump_conversation_activity();
 
+-- Trigger functions are not RPCs: keep them off the API surface.
+revoke execute on function public.bump_conversation_activity() from public, anon, authenticated;
+
 -- One round trip for the chat list: conversation rows with last-message
 -- preview + unread counts for the signed-in user.
 create or replace function public.get_conversation_summaries()

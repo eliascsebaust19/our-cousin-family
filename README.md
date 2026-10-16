@@ -23,7 +23,7 @@ credentials and a real backend.
 | Feed (posts, media, reactions, comments, bookmarks, pinning) | ✅ Code complete |
 | Chat (direct + group, text, photos, voice notes, typing, edit/delete) | ✅ Code complete |
 | Notifications, profile, settings, themes | ✅ Code complete |
-| Migrations + RLS policies | ✅ Written, **not yet applied** (no Supabase project exists) |
+| Migrations + RLS policies | ✅ Verified by `npm run db:check`, **not yet applied** (no Supabase project exists) |
 | Memory Vault (Google Drive) | 🚧 Placeholder page — needs a Google Cloud project (Phase 5) |
 | LiveKit calls | 🚧 Placeholder page — needs LiveKit Cloud keys (Phase 6) |
 | Ludo (4/6/8 players) | 🚧 Placeholder page — engine ships in Phase 4 |
@@ -119,6 +119,26 @@ account to see realtime features (feed, chat, notifications) in action.
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint (flat config) |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:check` | Run all migrations against in-process Postgres (PGlite) and assert RLS, grants, triggers and storage authorization |
+
+### Checking the database without Supabase
+
+`npm run db:check` boots **PGlite** (Postgres compiled to WebAssembly) with
+minimal Supabase stubs, applies
+[`supabase/migrations/`](supabase/migrations) in order, and then exercises the
+security model for real: it switches to the `anon` and `authenticated` roles
+with a JWT subject, and asserts that cross-family reads and writes are
+refused, that mutating RPCs are not reachable by anonymous callers, that
+notification triggers fire, and that storage paths are authorized by their
+first segment.
+
+It catches SQL syntax errors, migration-ordering mistakes and
+`grant ... on function (argtypes)` signatures that don't match the
+definitions — so the SQL can be validated without Docker or a cloud project.
+The stubs are an approximation of Supabase's platform (see
+[`scripts/pglite/supabase-stubs.sql`](scripts/pglite/supabase-stubs.sql));
+they are **not** a substitute for testing against a real project before
+launch.
 
 ## Project structure
 
@@ -140,6 +160,10 @@ src/
                             uploads, rate-limit, formatting, constants
   types/database.types.ts   hand-written Database types (regenerate with
                             `supabase gen types` once linked)
+scripts/
+  check-migrations.mjs      `npm run db:check` — applies the migrations to
+                            in-process Postgres and asserts RLS/grants
+  pglite/supabase-stubs.sql minimal Supabase platform stubs used by the check
 docs/                       setup guides + SECURITY.md
 ```
 
@@ -165,8 +189,10 @@ Deploy to Vercel after Supabase is set up:
 
 ## Known limitations
 
-- Migrations are written and reviewed but **have not been applied to a real
-  database yet**; expect to fix small issues on first apply.
+- Migrations are verified by `npm run db:check` against in-process Postgres
+  (PGlite) with Supabase stubs, but **have not yet been applied to a real
+  Supabase project** — expect to fix small environment differences on first
+  apply.
 - Memory Vault, Ludo, Calls, and Calendar are placeholder pages that state
   exactly what they need — they do nothing fake.
 - Chat voice notes rely on the browser's MediaRecorder (WebM/Opus on most

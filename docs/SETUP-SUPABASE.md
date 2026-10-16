@@ -51,6 +51,12 @@ supabase db push       # applies all pending migrations in filename order
 You can verify afterwards in **Database → Tables** that 14 tables exist, and
 in **Database → Policies** that nearly every table has policies attached.
 
+> **Optional: check the migrations before you touch Supabase.**
+> `npm run db:check` applies all four files to in-process Postgres (PGlite)
+> and asserts the resulting RLS policies, function grants, triggers and
+> storage authorization. It needs no Docker and no project, and it is the
+> same check CI runs.
+
 ## 3. URL configuration (auth redirects)
 
 **Project Settings → Authentication → URL Configuration**:

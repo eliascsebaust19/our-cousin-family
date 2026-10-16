@@ -1133,11 +1133,22 @@ create policy "notifications_delete_own"
 
 -- ----------------------------------------------------------------------------
 -- Lock down function execution
+--
+-- Postgres grants EXECUTE on new functions to PUBLIC by default, and every
+-- role (anon included) inherits PUBLIC's privileges. Revoking from `anon`
+-- alone therefore leaves signed-out callers able to invoke mutating RPCs
+-- through PostgREST, so PUBLIC must be revoked first and access re-granted
+-- explicitly below. (Roles are also revoked for defence in depth.)
 -- ----------------------------------------------------------------------------
+revoke execute on all functions in schema public from public;
 revoke execute on all functions in schema public from anon;
 revoke execute on all functions in schema public from authenticated;
 
 -- Policy helpers must run for the querying role (RLS evaluates them as caller).
+-- Trigger functions (set_updated_at, handle_new_user, notify_*) are deliberately
+-- NOT granted: Postgres checks EXECUTE on trigger functions at CREATE TRIGGER
+-- time, and they continue to fire as the function owner afterwards. Granting
+-- them would only add unnecessary RPC surface.
 grant execute on function
   public.is_family_member(uuid, uuid),
   public.has_family_row(uuid, uuid),
@@ -1147,12 +1158,7 @@ grant execute on function
   public.conversation_role(uuid, uuid),
   public.is_family_storage_path(text),
   public.is_conversation_storage_path(text),
-  public.can_read_avatar_path(text),
-  public.set_updated_at(),
-  public.handle_new_user(),
-  public.notify_comment(),
-  public.notify_reaction(),
-  public.notify_direct_message()
+  public.can_read_avatar_path(text)
 to authenticated, anon;
 
 -- Invitation preview is intentionally available before sign-in: possession of
