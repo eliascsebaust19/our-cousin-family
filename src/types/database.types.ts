@@ -695,6 +695,149 @@ export interface Database {
           },
         ];
       };
+      ludo_games: {
+        Row: {
+          id: string;
+          family_id: string;
+          created_by: string;
+          board_seats: number;
+          tokens_per_player: number;
+          status: string;
+          phase: string;
+          turn_seat: number | null;
+          turn_deadline: string | null;
+          dice: number | null;
+          consecutive_sixes: number;
+          version: number;
+          state: Json;
+          winner_seat: number | null;
+          turn_seconds: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          created_by: string;
+          board_seats: number;
+          tokens_per_player: number;
+          status?: string;
+          phase?: string;
+          turn_seat?: number | null;
+          turn_deadline?: string | null;
+          dice?: number | null;
+          consecutive_sixes?: number;
+          version?: number;
+          state?: Json;
+          winner_seat?: number | null;
+          turn_seconds?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          phase?: string;
+          turn_seat?: number | null;
+          turn_deadline?: string | null;
+          dice?: number | null;
+          consecutive_sixes?: number;
+          version?: number;
+          state?: Json;
+          winner_seat?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ludo_games_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ludo_games_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      ludo_seats: {
+        Row: {
+          id: string;
+          game_id: string;
+          seat: number;
+          user_id: string;
+          color: string;
+          autoplay: boolean;
+          placement: number | null;
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          game_id: string;
+          seat: number;
+          user_id: string;
+          color: string;
+          autoplay?: boolean;
+          placement?: number | null;
+          joined_at?: string;
+        };
+        Update: {
+          autoplay?: boolean;
+          placement?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ludo_seats_game_id_fkey";
+            columns: ["game_id"];
+            referencedRelation: "ludo_games";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ludo_seats_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      ludo_actions: {
+        Row: {
+          id: string;
+          game_id: string;
+          seq: number;
+          seat: number | null;
+          action: string;
+          dice: number | null;
+          token_index: number | null;
+          expected_version: number | null;
+          result: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          game_id: string;
+          seq: number;
+          seat?: number | null;
+          action: string;
+          dice?: number | null;
+          token_index?: number | null;
+          expected_version?: number | null;
+          result?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          result?: Json | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ludo_actions_game_id_fkey";
+            columns: ["game_id"];
+            referencedRelation: "ludo_games";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -775,6 +918,47 @@ export interface Database {
           last_message_type: string | null;
           unread_count: number;
         }[];
+      };
+      ludo_create_game: {
+        Args: {
+          p_family_id: string;
+          p_board_seats: number;
+          p_turn_seconds?: number;
+        };
+        Returns: string;
+      };
+      ludo_join_game: {
+        Args: { p_game_id: string };
+        Returns: number;
+      };
+      ludo_start_game: {
+        Args: { p_game_id: string };
+        Returns: Json;
+      };
+      ludo_roll: {
+        Args: {
+          p_game_id: string;
+          p_expected_version: number;
+          /** Verification-harness hook; refused unless ocf.test_mode is on. */
+          p_forced_dice?: number | null;
+        };
+        Returns: Json;
+      };
+      ludo_move: {
+        Args: { p_game_id: string; p_token: number; p_expected_version: number };
+        Returns: Json;
+      };
+      ludo_pass: {
+        Args: { p_game_id: string; p_expected_version: number };
+        Returns: Json;
+      };
+      ludo_auto_resolve: {
+        Args: { p_game_id: string };
+        Returns: Json;
+      };
+      ludo_snapshot: {
+        Args: { p_game_id: string };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

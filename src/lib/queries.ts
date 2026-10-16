@@ -56,4 +56,16 @@ export const channels = {
   typing: (conversationId: string) => `typing:${conversationId}`,
   presence: (conversationId: string) => `presence:${conversationId}`,
   calendar: (familyId: string) => `calendar:${familyId}`,
+  ludoGame: (gameId: string) => `ludo-game:${gameId}`,
+  ludoLobby: (familyId: string) => `ludo-lobby:${familyId}`,
 };
+
+/** Lobby rows: a game with its seats and the player sitting in each one. */
+export const LUDO_GAME_SELECT = `
+  id, family_id, created_by, board_seats, tokens_per_player, status, phase,
+  turn_seat, dice, version, winner_seat, turn_seconds, created_at,
+  seats:ludo_seats!ludo_seats_game_id_fkey(
+    id, game_id, seat, user_id, color, autoplay, placement,
+    profile:profiles!ludo_seats_user_id_fkey(id, full_name, nickname, avatar_url)
+  )
+`;

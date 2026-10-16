@@ -151,3 +151,75 @@ export type CalendarEvent = {
   author: ProfileLite | null;
   rsvps: EventRsvp[];
 };
+
+// ---------------------------------------------------------------------------
+// Family Ludo — the shapes returned by `public.ludo_*` RPCs
+// ---------------------------------------------------------------------------
+
+export type LudoTokenState = {
+  seat: number;
+  /** -1 yard · 0..ring-1 outer ring · ring..ring+4 column · ring+5 home */
+  progress: number[];
+};
+
+export type LudoLastMove = {
+  seat: number;
+  token: number;
+  from: number;
+  to: number;
+  captured: number;
+};
+
+export type LudoState = {
+  safeSquares?: number[];
+  tokens?: LudoTokenState[];
+  finishedOrder?: number[];
+  lastMove?: LudoLastMove | null;
+};
+
+export type LudoSnapshot = {
+  id: string;
+  familyId: string;
+  status: "waiting" | "playing" | "finished" | "abandoned";
+  phase: "awaiting_roll" | "awaiting_move";
+  turnSeat: number | null;
+  dice: number | null;
+  version: number;
+  winnerSeat: number | null;
+  turnDeadline: string | null;
+  consecutiveSixes: number;
+  boardSeats: number;
+  legalMoves: number[];
+  state: LudoState;
+};
+
+/** One row of the lobby list: a game plus its seats and their players. */
+export type LudoGameListItem = {
+  id: string;
+  family_id: string;
+  created_by: string;
+  board_seats: number;
+  tokens_per_player: number;
+  status: string;
+  phase: string;
+  turn_seat: number | null;
+  dice: number | null;
+  version: number;
+  winner_seat: number | null;
+  turn_seconds: number;
+  created_at: string;
+  seats: {
+    id: string;
+    game_id: string;
+    seat: number;
+    user_id: string;
+    color: string;
+    autoplay: boolean;
+    placement: number | null;
+    profile: ProfileLite | null;
+  }[];
+};
+
+/** Error messages raised by the engine that the UI reacts to specially. */
+export const LUDO_TURN_EXPIRED = "turn_expired";
+export const LUDO_STALE_STATE = "stale_state";

@@ -404,6 +404,11 @@ begin
   if g.id is null then
     return null;
   end if;
+  -- `ludo_snapshot` is the read path the app polls; it must be scoped exactly
+  -- like the SELECT policies even though it is security definer.
+  if not public.is_family_member(g.family_id, auth.uid()) then
+    raise exception 'not_a_member';
+  end if;
   if g.phase = 'awaiting_move' and g.dice is not null and g.status = 'playing' then
     v_moves := public.ludo_legal_moves(
       g.board_seats, g.turn_seat, g.tokens_per_player, g.dice,
@@ -973,6 +978,9 @@ grant execute on function public.ludo_roll(uuid, int, int) to authenticated;
 grant execute on function public.ludo_move(uuid, int, int) to authenticated;
 grant execute on function public.ludo_pass(uuid, int) to authenticated;
 grant execute on function public.ludo_auto_resolve(uuid) to authenticated;
+-- Read path: returns the snapshot (including the server-computed legalMoves)
+-- for family members only; the guard lives inside the function.
+grant execute on function public.ludo_snapshot(uuid) to authenticated;
 
 -- ----------------------------------------------------------------------------
 -- Realtime: the board is public information, so one channel per game is

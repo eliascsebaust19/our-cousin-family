@@ -221,3 +221,23 @@ export const rsvpSchema = z.object({
   response: eventResponseEnum,
   note: z.string().trim().max(200).optional().or(z.literal("")),
 });
+
+// ----------------------------------------------------------------------------
+// Family Ludo
+// ----------------------------------------------------------------------------
+export const ludoBoardSeatsSchema = z.union([
+  z.literal(4),
+  z.literal(6),
+  z.literal(8),
+]);
+
+export const createLudoGameSchema = z.object({
+  board_seats: ludoBoardSeatsSchema,
+  /** Per-turn timer the engine enforces (server clamps it to 10–600 too). */
+  turn_seconds: z.number().int().min(10).max(600),
+});
+
+export const ludoActionSchema = z.object({
+  game_id: uuidSchema,
+  expected_version: z.number().int().nonnegative(),
+});

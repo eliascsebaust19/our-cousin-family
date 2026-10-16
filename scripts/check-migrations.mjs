@@ -51,6 +51,7 @@ const AUTHENTICATED_RPCS = [
   "public.ludo_move(uuid, int, int)",
   "public.ludo_pass(uuid, int)",
   "public.ludo_auto_resolve(uuid)",
+  "public.ludo_snapshot(uuid)",
 ];
 
 /** RPCs an anonymous (signed-out) caller must NOT be able to call. */
@@ -199,8 +200,8 @@ const { rows: ludoHelperRows } = await db.query(
      join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname like 'ludo\\_%'
       and p.proname not in ('ludo_create_game', 'ludo_join_game', 'ludo_start_game',
-                            'ludo_roll', 'ludo_move', 'ludo_pass', 'ludo_auto_resolve',
-                            'ludo_game_family_id')
+                             'ludo_roll', 'ludo_move', 'ludo_pass', 'ludo_auto_resolve',
+                             'ludo_snapshot', 'ludo_game_family_id')
       and (has_function_privilege('anon', p.oid::regprocedure::text, 'execute')
         or has_function_privilege('authenticated', p.oid::regprocedure::text, 'execute'))`,
 );
@@ -1024,6 +1025,22 @@ check(
 await asRole("anon", null, () =>
   expectError("anonymous callers cannot create games",
     "select public.ludo_create_game($1, 4, 60)", [FAM_A]),
+);
+
+// Read path: the snapshot is the only way the app learns which moves are legal,
+// so it must be exactly as scoped as the table's SELECT policy.
+const snapshotForA = await asRole("authenticated", A, () =>
+  db.query("select public.ludo_snapshot($1) as s", [ludoId]),
+);
+check(
+  "a family member can read the game snapshot",
+  j(snapshotForA.rows[0].s).status === "finished" &&
+    Array.isArray(j(snapshotForA.rows[0].s).legalMoves),
+  String(j(snapshotForA.rows[0].s).status),
+);
+await asRole("authenticated", B, () =>
+  expectError("a non-member cannot read the snapshot",
+    "select public.ludo_snapshot($1)", [ludoId]),
 );
 
 // --- Report ------------------------------------------------------------------
