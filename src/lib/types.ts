@@ -126,3 +126,28 @@ export type NotificationItem = {
   created_at: string;
   actor: ProfileLite | null;
 };
+
+export type EventResponse = "going" | "maybe" | "declined";
+
+export type EventRsvp = {
+  event_id: string;
+  user_id: string;
+  response: EventResponse;
+  note: string | null;
+  profile: ProfileLite | null;
+};
+
+export type CalendarEvent = {
+  id: string;
+  family_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  created_at: string;
+  author: ProfileLite | null;
+  rsvps: EventRsvp[];
+};

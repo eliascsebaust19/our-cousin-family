@@ -607,6 +607,94 @@ export interface Database {
           },
         ];
       };
+      family_events: {
+        Row: {
+          id: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description: string | null;
+          location: string | null;
+          starts_at: string;
+          ends_at: string | null;
+          all_day: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description?: string | null;
+          location?: string | null;
+          starts_at: string;
+          ends_at?: string | null;
+          all_day?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          location?: string | null;
+          starts_at?: string;
+          ends_at?: string | null;
+          all_day?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_events_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "family_events_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      event_rsvps: {
+        Row: {
+          event_id: string;
+          user_id: string;
+          response: string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          event_id: string;
+          user_id: string;
+          response: string;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          response?: string;
+          note?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "event_rsvps_event_id_fkey";
+            columns: ["event_id"];
+            referencedRelation: "family_events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_rsvps_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {

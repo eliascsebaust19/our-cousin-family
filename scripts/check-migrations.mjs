@@ -24,9 +24,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDir = join(root, "supabase", "migrations");
 const stubsPath = join(root, "scripts", "pglite", "supabase-stubs.sql");
 
-const EXPECTED_PUBLIC_TABLES = 14;
+const EXPECTED_PUBLIC_TABLES = 16; // 14 core + family_events + event_rsvps
 const EXPECTED_BUCKETS = 3;
-const EXPECTED_REALTIME_TABLES = 8;
+const EXPECTED_REALTIME_TABLES = 10; // 8 core + family_events + event_rsvps
 
 /** RPCs an authenticated member may call. */
 const AUTHENTICATED_RPCS = [
@@ -174,6 +174,13 @@ const { rows: triggerRows } = await db.query(
   `select has_function_privilege('anon', 'public.set_member_role(uuid, uuid, text)', 'execute') as ok`,
 );
 check("anon cannot escalate roles via set_member_role", triggerRows[0].ok === false);
+
+// The calendar's helper resolves an event to its family; it must not be a
+// general-purpose RPC for anonymous callers.
+const { rows: eventHelperRows } = await db.query(
+  `select has_function_privilege('anon', 'public.event_family_id(uuid)', 'execute') as ok`,
+);
+check("anon cannot execute the event helper", eventHelperRows[0].ok === false);
 
 // ---------------------------------------------------------------------------
 // Behaviour: exercise the policies and RPCs as the real anon/authenticated
@@ -435,6 +442,103 @@ await asRole("authenticated", B, () =>
     [`${FAM_A}/album/sneaky.jpg`],
   ),
 );
+
+// Calendar: events are family-scoped, RSVPs are self-service, and creating an
+// event notifies the other active members.
+const eventId = "e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1";
+await asRole("authenticated", A, () =>
+  db.query(
+    `insert into public.family_events (id, family_id, created_by, title, starts_at, location)
+     values ($1, $2, $3, 'Eid lunch', now() + interval '3 days', 'Grandma''s house')`,
+    [eventId, FAM_A, A],
+  ),
+);
+const eventNotifs = await db.query(
+  "select count(*)::int as n from public.notifications where type = 'event' and entity_id = $1",
+  [eventId],
+);
+// Active members of FAM_A other than the creator: C and D (D approved above).
+check("creating an event notifies the other active members", eventNotifs.rows[0].n === 2, `found ${eventNotifs.rows[0].n}`);
+
+const bSeesEvents = await asRole("authenticated", B, () =>
+  db.query("select count(*)::int as n from public.family_events"),
+);
+check("another family sees no events", bSeesEvents.rows[0].n === 0, `saw ${bSeesEvents.rows[0].n}`);
+await asRole("authenticated", B, () =>
+  expectError(
+    "B cannot add an event to another family",
+    "insert into public.family_events (family_id, created_by, title, starts_at) values ($1, $2, 'Intruder', now())",
+    [FAM_A, B],
+  ),
+);
+
+const rsvp = await asRole("authenticated", C, () =>
+  db.query("insert into public.event_rsvps (event_id, user_id, response) values ($1, $2, 'going') returning response", [
+    eventId,
+    C,
+  ]),
+);
+check("a member can RSVP going", rsvp.rows[0].response === "going");
+const rsvpNotifs = await db.query(
+  "select count(*)::int as n from public.notifications where type = 'event' and user_id = $1 and dedupe_key = $2",
+  [A, `event_rsvp:${eventId}:${C}`],
+);
+check("a going RSVP notifies the organiser", rsvpNotifs.rows[0].n === 1, `found ${rsvpNotifs.rows[0].n}`);
+const rsvpUpdate = await asRole("authenticated", C, () =>
+  db.query("update public.event_rsvps set response = 'declined' where event_id = $1 and user_id = $2 returning response", [
+    eventId,
+    C,
+  ]),
+);
+check("a member can change their own RSVP", rsvpUpdate.rows[0].response === "declined");
+const rsvpNotifsAfter = await db.query(
+  "select count(*)::int as n from public.notifications where dedupe_key = $1",
+  [`event_rsvp:${eventId}:${C}`],
+);
+check("declining withdraws the organiser's notification", rsvpNotifsAfter.rows[0].n === 0, `found ${rsvpNotifsAfter.rows[0].n}`);
+await asRole("authenticated", C, () =>
+  expectError(
+    "a member cannot answer on someone else's behalf",
+    "insert into public.event_rsvps (event_id, user_id, response) values ($1, $2, 'going')",
+    [eventId, D],
+  ),
+);
+await asRole("authenticated", B, () =>
+  expectError(
+    "a non-member cannot RSVP to another family's event",
+    "insert into public.event_rsvps (event_id, user_id, response) values ($1, $2, 'going')",
+    [eventId, B],
+  ),
+);
+
+// The calendar helper must resolve the family, not leak across families.
+const helperAsC = await asRole("authenticated", C, () =>
+  db.query("select public.event_family_id($1) as family_id", [eventId]),
+);
+check("event_family_id resolves the owning family", helperAsC.rows[0].family_id === FAM_A, helperAsC.rows[0].family_id);
+
+// Deleting an event must not leave dangling notifications or RSVPs behind.
+const eventNotifsBefore = await db.query(
+  "select count(*)::int as n from public.notifications where entity_type = 'event' and entity_id = $1",
+  [eventId],
+);
+await asRole("authenticated", A, () =>
+  db.query("delete from public.family_events where id = $1", [eventId]),
+);
+const eventNotifsAfter = await db.query(
+  "select count(*)::int as n from public.notifications where entity_type = 'event' and entity_id = $1",
+  [eventId],
+);
+check(
+  "deleting an event clears every notification it generated",
+  eventNotifsBefore.rows[0].n > 0 && eventNotifsAfter.rows[0].n === 0,
+  `before=${eventNotifsBefore.rows[0].n} after=${eventNotifsAfter.rows[0].n}`,
+);
+const rsvpsAfterDelete = await db.query(
+  "select count(*)::int as n from public.event_rsvps where event_id = $1",
+  [eventId],
+);
+check("deleting an event cascades its RSVPs", rsvpsAfterDelete.rows[0].n === 0, `found ${rsvpsAfterDelete.rows[0].n}`);
 
 // --- Report ------------------------------------------------------------------
 console.log("");

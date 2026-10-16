@@ -38,6 +38,16 @@ export const CONVERSATION_LIST_SELECT = `
   members:conversation_members(user_id, profile:profiles!conversation_members_user_id_fkey(${PROFILE_FIELDS}))
 `;
 
+export const CALENDAR_SELECT = `
+  id, family_id, created_by, title, description, location, starts_at, ends_at,
+  all_day, created_at,
+  author:profiles!family_events_created_by_fkey(${PROFILE_FIELDS}),
+  rsvps:event_rsvps!event_rsvps_event_id_fkey(
+    event_id, user_id, response, note,
+    profile:profiles!event_rsvps_user_id_fkey(${PROFILE_FIELDS})
+  )
+`;
+
 /** Realtime channel names (UUIDs keep them unguessable). */
 export const channels = {
   feed: (familyId: string) => `feed:${familyId}`,
@@ -45,4 +55,5 @@ export const channels = {
   conversation: (conversationId: string) => `conversation:${conversationId}`,
   typing: (conversationId: string) => `typing:${conversationId}`,
   presence: (conversationId: string) => `presence:${conversationId}`,
+  calendar: (familyId: string) => `calendar:${familyId}`,
 };

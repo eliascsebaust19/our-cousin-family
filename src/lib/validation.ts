@@ -189,3 +189,35 @@ export const createGroupChatSchema = z.object({
 export const markReadSchema = z.object({
   ids: z.array(uuidSchema).min(1).max(200),
 });
+
+// ----------------------------------------------------------------------------
+// Calendar
+// ----------------------------------------------------------------------------
+export const eventResponseEnum = z.enum(["going", "maybe", "declined"]);
+
+/**
+ * `starts_at` / `ends_at` arrive as ISO-8601 strings produced from the form's
+ * <input type="date"> / <input type="datetime-local"> values (see
+ * src/lib/datetime.ts), so they are just required ISO strings here. The
+ * "end before start" rule is enforced in the database too.
+ */
+export const createEventSchema = z
+  .object({
+    title: z.string().trim().min(1, "Give the event a name").max(120),
+    description: z.string().trim().max(2000).optional().or(z.literal("")),
+    location: z.string().trim().max(200).optional().or(z.literal("")),
+    all_day: z.boolean(),
+    starts_at: z.string().min(1, "Pick when it starts"),
+    ends_at: z.string().optional().or(z.literal("")),
+  })
+  .refine((d) => !d.ends_at || d.ends_at >= d.starts_at, {
+    message: "The event must end after it starts",
+    path: ["ends_at"],
+  });
+
+export const updateEventSchema = createEventSchema;
+
+export const rsvpSchema = z.object({
+  response: eventResponseEnum,
+  note: z.string().trim().max(200).optional().or(z.literal("")),
+});
