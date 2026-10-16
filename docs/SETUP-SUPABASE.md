@@ -166,17 +166,24 @@ If anything fails, the browser console + Supabase **Logs → Postgres** and
 ## Deploying the Edge Functions and later services
 
 - **Edge Functions** live in `supabase/functions/` and are deployed with
-  `supabase functions deploy <name>`. The Vault ships two
-  (`vault`, `drive-oauth-callback`) — see **docs/SETUP-GOOGLE-DRIVE.md** for the
-  exact commands and secrets. Both are deployed with `--no-verify-jwt` because
-  they verify the caller themselves (see that guide for why).
+  `supabase functions deploy <name>`. The project ships three:
+  - `vault` and `drive-oauth-callback` — the Memory Vault; see
+    **docs/SETUP-GOOGLE-DRIVE.md** for the exact commands and secrets.
+  - `livekit-token` — the only minter of call join tokens; see
+    **docs/SETUP-LIVEKIT.md**.
+  All three are deployed with `--no-verify-jwt` because each verifies the
+  caller's Supabase JWT itself (inside the function), so it can answer with a
+  specific error instead of the platform's opaque 401. The flag disables the
+  platform's gate, **not** the check inside the function — these endpoints are
+  not open.
 - **The Ludo engine is not an Edge Function.** It is pure SQL: all game rules,
   dice rolls and turn timers run inside `public.ludo_*` security-definer
   functions in `supabase/migrations/20261016060000_ludo.sql`, so the server owns
   randomness and legality and a client can never fake a roll. See
   **docs/ludo-rules.md**.
-- **LiveKit tokens** are minted by an Edge Function — see
-  **docs/SETUP-LIVEKIT.md**.
+- **Calls need no migrations.** Room names are derived from existing rows
+  (`family:<family_id>`, `dm:<conversation_id>`), so the only call-specific
+  server code is `supabase/functions/livekit-token/`.
 - **Database types**: after linking the CLI you can regenerate
   `src/types/database.types.ts` with
   `supabase gen types typescript --linked > src/types/database.types.ts`.

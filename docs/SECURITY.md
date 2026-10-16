@@ -19,7 +19,7 @@ decision that matters is re-checked in Postgres.
 | `security definer` RPCs | Cross-row operations (join a family, approve a member, start a conversation) that re-check the caller's role *inside* Postgres | Authoritative |
 | Postgres triggers | Notification creation, `updated_at`, conversation activity, profile creation on signup | Authoritative, never client-driven |
 | Storage policies | Who may read/write each object in each private bucket | Authoritative |
-| Supabase Edge Functions | All third-party secrets: Google refresh tokens, Drive access | Authoritative, server-only |
+| Supabase Edge Functions | All third-party secrets: Google refresh tokens, Drive access, LiveKit API key/secret | Authoritative, server-only |
 
 The proxy is a *routing* concern. If it were removed entirely, RLS would still
 prevent any family from reading another family's data.
@@ -123,7 +123,9 @@ render time (`resolveAvatarUrl` / `resolveMediaUrl`), so a leaked URL expires.
 - Google client ID/secret, `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY` and `SITE_URL`
   are **Supabase Edge Function secrets** (`supabase secrets set`), not Vercel
   environment variables. `.env.example` lists them for reference only.
-- LiveKit's key/secret will follow the same pattern when calls are built.
+- LiveKit's key/secret follow the same pattern: they are Supabase Edge Function
+  secrets. Only `NEXT_PUBLIC_LIVEKIT_URL` — an address, not a credential —
+  reaches the browser.
 - `.env.example` contains placeholders only; `.env.local` is git-ignored.
 - No secret is ever prefixed with `NEXT_PUBLIC_`.
 
@@ -143,6 +145,26 @@ is built to keep them off every client:
 | `/api/drive/content` reads the Supabase session cookie server-side and forwards it as a bearer token; responses are `cache-control: private` | A shared cache serving one family's photo to another user |
 | The Drive scope is `drive.file` only | The app can never see the user's unrelated Drive files |
 
+### Calls specifically
+
+A call token is a bearer credential for a room, so the only question that
+matters is *who can obtain one*. That decision lives in one Edge Function
+(`supabase/functions/livekit-token/`) and nowhere else.
+
+| Control | What it prevents |
+| --- | --- |
+| No migration: rooms are derived from `family_id` / `conversation_id`, so the room's identity **is** the row that already has RLS on it | A parallel table of "call permissions" that could drift from family membership |
+| The function verifies the caller's Supabase JWT itself (`requireUser`), then re-checks `family_members` (family rooms) or `conversation_members` (DM rooms) in the database | A valid login being mistaken for permission to join any room; a removed member rejoining |
+| The room name must match `family:<uuid>` / `dm:<uuid>` with a validated UUID before any database query runs | Crafted room names reaching a query or LiveKit |
+| The signed token's `video` grant names **exactly one room** (`room`, `roomJoin`, `canPublish`) and is useless elsewhere | Pivoting a token from one family's room to another |
+| Tokens expire in 1 hour and are signed with `LIVEKIT_API_SECRET`, which never leaves the server | A long-lived credential leaking out of the browser |
+| The lobby's participant list is produced server-side (`?action=participants`) using a 60-second `roomAdmin` token minted in the function | The client deciding, or displaying, who is in a room it may not see |
+| `canPublish` is granted by the server per request; the browser can never widen it | A viewer injecting audio/video into a room |
+| `.env.example` lists `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` for reference only; both are set with `supabase secrets set` and are absent from the app's environment | Accidental bundling into the client |
+
+The browser holds only a per-user, per-room, one-hour token. There is no
+long-lived call credential and no call record to leak.
+
 ## 7. Realtime
 
 Realtime `postgres_changes` subscriptions are subject to the same RLS
@@ -155,6 +177,10 @@ RLS would hide from the subscriber.
 `vault_items` are added to the publication for the same reason: they are
 select-only for clients, so broadcasting a change can only ever reveal a row
 the subscriber could already read with a `select`.
+
+Calls use no Postgres realtime at all. LiveKit is the presence source, and the
+lobby reads it through the Edge Function, so there is no client-subscribable
+channel that could leak who is in a room to a non-member.
 
 ## 8. Known gaps and limitations
 
@@ -191,13 +217,13 @@ Being explicit about what is **not** yet done:
    there is no tombstone or admin audit log.
 8. **Email is limited by Supabase's default rate limits** until custom SMTP
    is configured; this is a deliverability (not confidentiality) concern.
-9. **The Vault and the Ludo engine are untested against the real platform.**
-   The Ludo rules are Bcrypt-free pure SQL exercised by `npm run db:check`; the
-   Vault's Edge Functions cannot be executed locally at all (no Deno runtime
-   here), so they have been reviewed by hand but never run. They are the most
-   likely place for a first-deploy bug. Deploy `vault` and
-   `drive-oauth-callback` to a scratch project and walk the flow once before
-   inviting family members.
+9. **The Vault, the Ludo engine and the calls function are untested against the
+   real platform.** The Ludo rules are pure SQL exercised by `npm run db:check`;
+   the Vault's and LiveKit's Edge Functions cannot be executed locally at all
+   (no Deno runtime here), so they have been reviewed by hand but never run.
+   They are the most likely place for a first-deploy bug. Deploy `vault`,
+   `drive-oauth-callback` and `livekit-token` to a scratch project and walk each
+   flow once before inviting family members.
 10. **Vault uploads are not virus-scanned and not size-enforced per family.**
     The only limit is 40 MB per file, enforced in the Edge Function. A family
     member can fill the connected Drive account's quota.
@@ -205,6 +231,21 @@ Being explicit about what is **not** yet done:
     `vault_connections` in the Supabase dashboard (i.e. the project owner) can
     decrypt the refresh token with the encryption key. This is a single-tenant
     design choice, not an oversight, but it is worth stating.
+12. **Membership is checked only when a token is minted.** If a member is
+    removed from a family mid-call they stay connected, and a token already in
+    their browser stays valid for up to its 1-hour lifetime (LiveKit Cloud
+    refreshes tokens automatically during a session, so it will not lapse).
+    LiveKit revokes a token when `RemoveParticipant` is called, so the fix is to
+    disconnect members from their family's room when `family_members` changes —
+    a database webhook (or a scheduled sweep) calling the LiveKit server API.
+    That wiring does not exist yet; until it does, remove-and-rotate is the only
+    remedy. Note that a participant who was removed up to ~1 minute earlier can
+    still rejoin, because revocation compares the token's `nbf` with a
+    one-minute clock-skew buffer.
+13. **Calls have no audit trail and no abuse controls.** There is no call log,
+    no blocking, and no per-user call rate limit — any active member may start
+    or join their family's room at any time. LiveKit's free tier is metered, so
+    a member could in principle consume the family's minutes.
 
 ## 9. Reporting
 

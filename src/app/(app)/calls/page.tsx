@@ -1,19 +1,13 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/coming-soon";
+import { CallsHome } from "@/components/calls/calls-home";
 
 export const metadata: Metadata = { title: "Calls" };
 
+/**
+ * Call hub. The room itself is derived from the active family
+ * (`family:<family_id>`), so there is nothing to configure here — the page
+ * shows who is already talking and lets you walk in.
+ */
 export default function CallsPage() {
-  return (
-    <ComingSoon
-      title="Family Calls"
-      summary="Audio and video rooms for the family — one tap to call everyone, built on LiveKit. This feature is wired up in the next milestone and requires your own LiveKit Cloud keys."
-      requires={[
-        "A free LiveKit Cloud account",
-        "API key + secret added to Supabase secrets",
-        "The calls Edge Function deployed (mints per-user room tokens)",
-      ]}
-      dependsOn="Setup guide: docs/SETUP-LIVEKIT.md (written in this repository)."
-    />
-  );
+  return <CallsHome />;
 }

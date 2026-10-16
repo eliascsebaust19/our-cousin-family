@@ -1,68 +1,19 @@
 // ============================================================================
-// Shared request plumbing for the Vault Edge Functions: CORS, JWT
-// verification, family-membership checks, and Drive connection lookup.
+// Vault-specific server helpers: Google secret handling and the stored Drive
+// connection. Generic request plumbing (CORS, JWT, membership) lives in
+// ./http.ts.
 //
 // Runtime: Deno (Supabase Edge Functions).
+//
+// Secrets consumed (set with `supabase secrets set ...`):
+//   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+//   GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY (base64, 32 random bytes),
+//   SITE_URL (where to send the browser after the OAuth dance)
 // ============================================================================
 
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { decryptSecret, refreshAccessToken } from "./vault-google.ts";
-
-export const corsHeaders: Record<string, string> = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type, apikey, x-client-info",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-  // So the <img>/<video> proxy can read byte-range metadata.
-  "access-control-expose-headers": "content-range, content-length, accept-ranges",
-};
-
-export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
-}
-
-/**
- * Errors are thrown as `Error("code:detail")`. Everything the client is allowed
- * to see is mapped here; anything else becomes a generic 500 so internal
- * details never leak through the API surface.
- */
-const STATUS_BY_CODE: Record<string, number> = {
-  not_authenticated: 401,
-  not_a_member: 403,
-  not_a_family_admin: 403,
-  not_allowed: 403,
-  item_not_found: 404,
-  game_not_found: 404,
-  vault_not_configured: 501,
-  drive_not_connected: 409,
-  drive_reconnect_required: 409,
-  bad_request: 400,
-  missing_file: 400,
-  unsupported_file: 415,
-  forbidden: 403,
-};
-
-export function errorResponse(error: unknown): Response {
-  const raw = error instanceof Error ? error.message : String(error);
-  const code = raw.split(":")[0];
-  const status = STATUS_BY_CODE[code] ?? 500;
-  if (status === 500) {
-    // Logged server-side only.
-    console.error("[vault]", raw);
-    return json({ error: "internal_error" }, 500);
-  }
-  return json({ error: code, detail: raw.slice(code.length + 1) || null }, status);
-}
-
-export function fail(code: string, detail?: string): never {
-  throw new Error(detail ? `${code}:${detail}` : code);
-}
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+import { fail } from "./http.ts";
 
 export type VaultConfig = {
   clientId: string;
@@ -90,74 +41,6 @@ export function requireVaultConfig(): VaultConfig {
   if (!config) fail("vault_not_configured", "missing_google_secrets");
   return config;
 }
-
-// ---------------------------------------------------------------------------
-// Clients & identity
-// ---------------------------------------------------------------------------
-
-export function serviceClient(): SupabaseClient {
-  const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key) fail("vault_not_configured", "missing_supabase_env");
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
-export type RequestUser = { id: string };
-
-/** Verifies the caller's Supabase access token. Throws `not_authenticated`. */
-export async function requireUser(
-  request: Request,
-  admin: SupabaseClient,
-): Promise<RequestUser> {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.toLowerCase().startsWith("bearer ")
-    ? header.slice(7).trim()
-    : "";
-  if (!token) fail("not_authenticated");
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) fail("not_authenticated");
-  return { id: data.user.id };
-}
-
-/** Active membership role, or null. */
-export async function familyRole(
-  admin: SupabaseClient,
-  familyId: string,
-  userId: string,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("family_members")
-    .select("role")
-    .eq("family_id", familyId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .maybeSingle();
-  return (data?.role as string | undefined) ?? null;
-}
-
-export async function requireMember(
-  admin: SupabaseClient,
-  familyId: string,
-  userId: string,
-): Promise<string> {
-  const role = await familyRole(admin, familyId, userId);
-  if (!role) fail("not_a_member");
-  return role;
-}
-
-export async function requireFamilyAdmin(
-  admin: SupabaseClient,
-  familyId: string,
-  userId: string,
-): Promise<string> {
-  const role = await requireMember(admin, familyId, userId);
-  if (role !== "owner" && role !== "admin") fail("not_a_family_admin");
-  return role;
-}
-
-// ---------------------------------------------------------------------------
-// Drive connection
-// ---------------------------------------------------------------------------
 
 export type DriveConnection = {
   familyId: string;

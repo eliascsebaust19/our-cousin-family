@@ -20,17 +20,19 @@
 
 import {
   accessTokenFor,
+  loadConnection,
+  readVaultConfig,
+} from "../_shared/vault-server.ts";
+import {
   corsHeaders,
   errorResponse,
   fail,
   json,
-  loadConnection,
-  readVaultConfig,
   requireFamilyAdmin,
   requireMember,
   requireUser,
   serviceClient,
-} from "../_shared/vault-server.ts";
+} from "../_shared/http.ts";
 import {
   VAULT_ROOT_FOLDER,
   buildConsentUrl,

@@ -278,3 +278,22 @@ export type VaultStatus = {
   reason: string | null;
   folderName: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Family calls — LiveKit rooms derived from existing rows
+// ---------------------------------------------------------------------------
+
+/** Someone LiveKit reports as connected to a room. */
+export type CallParticipant = {
+  identity: string;
+  name: string | null;
+  joinedAt: string | null;
+};
+
+/** What the `livekit-token` function returns when a caller joins. */
+export type CallToken = {
+  url: string;
+  room: string;
+  identity: string;
+  token: string;
+};

@@ -35,9 +35,9 @@ import {
 import {
   fail,
   familyRole,
-  readVaultConfig,
   serviceClient,
-} from "../_shared/vault-server.ts";
+} from "../_shared/http.ts";
+import { readVaultConfig } from "../_shared/vault-server.ts";
 
 /** Where the browser lands when something goes wrong. */
 function backTo(siteUrl: string, params: Record<string, string>): Response {

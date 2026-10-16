@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, MessageCircle, Users } from "lucide-react";
+import { ArrowLeft, Loader2, MessageCircle, Users, Video } from "lucide-react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { parseISO } from "date-fns";
@@ -355,6 +355,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             {headerTitle.subtitle ?? " "}
           </span>
         </span>
+
+        <Link
+          href={`/calls/dm-${conversationId}`}
+          aria-label="Start a call in this conversation"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        >
+          <Video className="h-5 w-5" aria-hidden />
+        </Link>
 
         {conversation?.type === "group" ? (
           <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />

@@ -273,3 +273,17 @@ export const vaultTagSchema = z.object({
   item_id: uuidSchema,
   profile_id: uuidSchema,
 });
+
+// ----------------------------------------------------------------------------
+// Family calls
+// ----------------------------------------------------------------------------
+
+/**
+ * Mirrors the room allow-list in the `livekit-token` function. This only stops
+ * malformed requests leaving the browser — the function re-validates and then
+ * checks membership in the database.
+ */
+export const callTokenRequestSchema = z.object({
+  room: z.string().regex(/^(family|dm):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+  canPublish: z.boolean().optional(),
+});
