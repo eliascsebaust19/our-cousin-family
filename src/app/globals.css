@@ -1,26 +1,202 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens — warm, safe, family-oriented.
+   Light: warm cream paper, deep forest-green primary, navy ink, terracotta
+   accent used sparingly.
+--------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbf7f0;
+  --foreground: #1d2b22;
+  --card: #ffffff;
+  --card-foreground: #1d2b22;
+  --popover: #ffffff;
+  --popover-foreground: #1d2b22;
+  --primary: #1d6a4c;
+  --primary-foreground: #fdfcf9;
+  --secondary: #f0e9dd;
+  --secondary-foreground: #2a3c31;
+  --muted: #f2ece1;
+  --muted-foreground: #6d7a70;
+  --accent: #efe7d9;
+  --accent-foreground: #1d2b22;
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --border: #e7ddcd;
+  --input: #ded2bd;
+  --ring: #1d6a4c;
+
+  --brand-warm: #c96f4a; /* terracotta accent */
+  --brand-navy: #23395b; /* deep navy for headings */
+  --brand-amber: #e9b44c; /* celebrations */
+  --success: #2e7d5b;
+
+  --radius: 0.9rem;
+}
+
+.dark {
+  --background: #171814;
+  --foreground: #eee9dd;
+  --card: #1f211b;
+  --card-foreground: #eee9dd;
+  --popover: #1f211b;
+  --popover-foreground: #eee9dd;
+  --primary: #46a37a;
+  --primary-foreground: #0c130f;
+  --secondary: #262921;
+  --secondary-foreground: #e6e1d5;
+  --muted: #262921;
+  --muted-foreground: #a3a99a;
+  --accent: #2b2e25;
+  --accent-foreground: #eee9dd;
+  --destructive: #d9584f;
+  --destructive-foreground: #ffffff;
+  --border: #34372d;
+  --input: #3c4034;
+  --ring: #46a37a;
+
+  --brand-warm: #e08b62;
+  --brand-navy: #9db4d8;
+  --brand-amber: #f0c26b;
+  --success: #52b788;
 }
 
 @theme inline {
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-display: var(--font-display), Georgia, "Times New Roman", serif;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand-warm: var(--brand-warm);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-amber: var(--brand-amber);
+  --color-success: var(--success);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  overflow-x: clip;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile-first utilities
+--------------------------------------------------------------------------- */
+
+/* Notch / home-indicator safe padding. */
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+
+@utility mb-safe {
+  margin-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+/* 44×44 px minimum touch target (WCAG 2.5.5 AAA). */
+@utility touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Thin, quiet scrollbars on desktop. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent)
+    transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion (used sparingly)
+--------------------------------------------------------------------------- */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.28s ease-out both;
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 2s ease-in-out infinite;
 }

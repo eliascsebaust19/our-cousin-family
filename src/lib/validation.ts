@@ -1,0 +1,191 @@
+import { z } from "zod";
+
+// ----------------------------------------------------------------------------
+// Common
+// ----------------------------------------------------------------------------
+export const uuidSchema = z.string().uuid();
+
+/** Invite codes: 8–12 chars from the unambiguous alphabet (SQL check too). */
+export const inviteCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9]{8,12}$/, "Enter a valid invitation code");
+
+// ----------------------------------------------------------------------------
+// Auth
+// ----------------------------------------------------------------------------
+export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email address").max(254);
+
+export const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(72, "Password must be at most 72 characters");
+
+export const signInSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, "Password is required"),
+});
+
+export const signUpSchema = z
+  .object({
+    fullName: z.string().trim().min(2, "Enter your full name").max(80),
+    email: emailSchema,
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export const resetPasswordSchema = z.object({ email: emailSchema });
+
+export const updatePasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+// ----------------------------------------------------------------------------
+// Profile
+// ----------------------------------------------------------------------------
+export const relationshipEnum = z.enum([
+  "cousin",
+  "sibling",
+  "uncle",
+  "aunt",
+  "parent",
+  "grandparent",
+  "other",
+]);
+
+export const profileUpdateSchema = z.object({
+  full_name: z.string().trim().min(2, "Enter your name").max(80),
+  nickname: z.string().trim().max(40).optional().or(z.literal("")),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_]{3,24}$/, "3–24 letters, numbers or underscores")
+    .optional()
+    .or(z.literal("")),
+  bio: z.string().trim().max(500).optional(),
+  birthday: z.string().optional().nullable(),
+  relationship: relationshipEnum.optional().nullable(),
+  show_birthday: z.boolean(),
+  show_online_status: z.boolean(),
+});
+
+// ----------------------------------------------------------------------------
+// Family
+// ----------------------------------------------------------------------------
+export const createFamilySchema = z.object({
+  name: z.string().trim().min(2, "Family name must be at least 2 characters").max(60),
+  description: z.string().trim().max(1000).optional(),
+  rules: z.string().trim().max(4000).optional(),
+  privacy: z.enum(["invite_only", "private"]).default("invite_only"),
+  require_approval: z.boolean().default(false),
+  avatar_url: z.string().url().optional().or(z.literal("")),
+  cover_url: z.string().url().optional().or(z.literal("")),
+});
+
+export const updateFamilySchema = createFamilySchema.partial();
+
+export const createInviteSchema = z.object({
+  role: z.enum(["admin", "moderator", "member"]).default("member"),
+  /** ISO date-time; empty/undefined = never expires. */
+  expires_at: z.string().optional().or(z.literal("")),
+  max_uses: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+});
+
+export const joinFamilySchema = z.object({
+  code: inviteCodeSchema,
+});
+
+// ----------------------------------------------------------------------------
+// Feed
+// ----------------------------------------------------------------------------
+export const momentTypeEnum = z.enum([
+  "regular",
+  "birthday",
+  "wedding",
+  "trip",
+  "throwback",
+  "achievement",
+  "announcement",
+]);
+
+export const createPostSchema = z
+  .object({
+    content: z.string().trim().max(5000).optional(),
+    moment_type: momentTypeEnum.default("regular"),
+    visibility: z.enum(["family", "admins"]).default("family"),
+    media_count: z.number().int().min(0).max(10).default(0),
+  })
+  .refine((d) => (d.content?.length ?? 0) > 0 || d.media_count > 0, {
+    message: "Write something or add a photo",
+  });
+
+export const updatePostSchema = z.object({
+  content: z.string().trim().min(1).max(5000),
+});
+
+export const commentSchema = z.object({
+  content: z.string().trim().min(1, "Write a comment").max(2000),
+  parent_id: uuidSchema.optional().nullable(),
+});
+
+export const reactionSchema = z.enum([
+  "like",
+  "love",
+  "haha",
+  "wow",
+  "sad",
+  "angry",
+]);
+
+// ----------------------------------------------------------------------------
+// Chat
+// ----------------------------------------------------------------------------
+export const sendMessageSchema = z
+  .object({
+    content: z.string().trim().max(4000).optional(),
+    message_type: z.enum(["text", "image", "voice", "system"]).default("text"),
+    reply_to_id: uuidSchema.optional().nullable(),
+    media_count: z.number().int().min(0).max(1).default(0),
+  })
+  .refine((d) => (d.content?.length ?? 0) > 0 || d.media_count > 0, {
+    message: "Message cannot be empty",
+  });
+
+export const editMessageSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+});
+
+export const createDirectChatSchema = z.object({
+  other_user: uuidSchema,
+});
+
+export const createGroupChatSchema = z.object({
+  title: z.string().trim().min(1, "Give the group a name").max(60),
+  member_ids: z.array(uuidSchema).min(1, "Pick at least one member").max(50),
+});
+
+// ----------------------------------------------------------------------------
+// Notifications
+// ----------------------------------------------------------------------------
+export const markReadSchema = z.object({
+  ids: z.array(uuidSchema).min(1).max(200),
+});
