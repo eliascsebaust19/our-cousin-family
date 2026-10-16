@@ -1,8 +1,11 @@
 # Setup guide — Google Drive (Memory Vault)
 
-> **Status: Phase 5, not yet implemented.** The `/vault` page in the app is an
-> honest placeholder. Following this guide today provisions the Google side so
-> that Phase 5 work is unblocked — it will **not** make the Vault work yet.
+> **Status: implemented, not deployed.** The code is complete: the `vault` and
+> `drive-oauth-callback` Edge Functions, the `/api/drive/content` media proxy,
+> the `vault_items` Postgres index with column-level RLS, and the `/vault` UI.
+> Nothing is live until you finish this guide, run `supabase db push`, deploy the
+> two functions, and connect a Drive account. Until then `/vault` says exactly
+> that instead of pretending to work.
 
 The Memory Vault stores family photos, videos and documents in a **single
 Google Drive account** owned by the family. Individual family members do *not*
@@ -75,31 +78,30 @@ is free. Do this before real family use.
 - **Application type**: **Web application**
 - **Name**: `Our Cousin Family — server`
 - **Authorised JavaScript origins**: `https://<your-vercel-domain>`
-- **Authorised redirect URIs** — the exact final URI is fixed in Phase 5,
-  because token exchange happens **server-side in a Supabase Edge Function**
-  (secrets must never reach the browser). Provision it as:
+- **Authorised redirect URIs** — there is exactly **one** redirect URI, and it
+  belongs to the Supabase Edge Function (the token exchange happens server-side;
+  the client secret never reaches the browser):
 
   ```
   https://<project-ref>.supabase.co/functions/v1/drive-oauth-callback
   ```
 
-  and, for local development if we test the flow through the Next.js server
-  route instead, also:
+  `<project-ref>` is the subdomain of your Supabase project URL
+  (`https://<project-ref>.supabase.co`). The path must match byte-for-byte,
+  including the function name: the deployed function is
+  `supabase/functions/drive-oauth-callback/`.
 
-  ```
-  http://localhost:3000/api/drive/callback
-  https://<your-vercel-domain>/api/drive/callback
-  ```
-
-  Add all of these now — unused redirect URIs are harmless, and having them
-  in place avoids a round-trip later. `.env.example` documents
-  `{SITE_URL}/api/drive/callback` as the app-side endpoint.
+  You do **not** need a `localhost` redirect URI: the OAuth dance runs entirely
+  inside Supabase, and the function sends the browser back to `SITE_URL` when it
+  finishes.
 
 - **Create** → copy the **Client ID** and **Client secret**.
 
-## 5. Store the credentials (server-side only)
+## 5. Store the credentials as Supabase function secrets
 
-The client secret and the refresh token must **never** ship to the browser.
+The client secret, the refresh token, and the token-encryption key must
+**never** ship to the browser. They are read with `Deno.env.get(...)` inside the
+Edge Functions, so they go on **Supabase**, not in `.env.local`.
 
 1. Generate the token-encryption key (32 random bytes, base64):
 
@@ -110,62 +112,92 @@ The client secret and the refresh token must **never** ship to the browser.
    openssl rand -base64 32
    ```
 
-2. Put these in `.env.local` **for local server-side testing only** (they are
-   not needed by the M1 app):
-
-   ```
-   GOOGLE_CLIENT_ID=<client id>
-   GOOGLE_CLIENT_SECRET=<client secret>
-   GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY=<base64 key>
-   ```
-
-3. When the Edge Function exists (Phase 5), set the same values as Supabase
-   function secrets so they live server-side only:
+2. Set them on the project:
 
    ```bash
    supabase secrets set \
-     GOOGLE_CLIENT_ID=... \
-     GOOGLE_CLIENT_SECRET=... \
-     GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY=...
+     GOOGLE_CLIENT_ID=<client id> \
+     GOOGLE_CLIENT_SECRET=<client secret> \
+     GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY=<base64 key> \
+     SITE_URL=https://<your-vercel-domain>
    ```
 
-   **Never** prefix any of these with `NEXT_PUBLIC_`.
+   `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are
+   injected automatically into every Edge Function — do not set them yourself.
 
-## 6. What the integration will do (Phase 5 design)
+   **Never** prefix any of these with `NEXT_PUBLIC_`. The only Google value the
+   browser ever sees is the consent URL the `vault` function builds for it.
 
-Once built, the flow will be:
+3. Apply the Vault schema (three tables, RLS, column grants) and deploy the
+   functions:
 
-1. A family **owner/admin** clicks *Connect Google Drive* in `/vault`.
-2. The browser is sent to Google's consent screen. The user approves
-   `drive.file`.
-3. Google redirects back to the **Edge Function** with an authorization code.
-4. The function exchanges the code for a **refresh token**, encrypts it with
-   `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY`, and stores it against the family's
-   row. The token never leaves the server.
-5. When a member opens the Vault, the app calls a **membership-checked**
-   server endpoint. The endpoint decrypts the refresh token, obtains a
-   short-lived access token, talks to Drive, and returns file metadata or a
-   short-lived link. RLS and an explicit family-membership check gate every
-   call, so a member of one family can never read another family's vault.
-6. Uploads are written to a dedicated `Our Cousin Family` folder that the app
-   creates, with one subfolder per family and per album.
+   ```bash
+   supabase link --project-ref <project-ref>
+   supabase db push
+   supabase functions deploy vault --no-verify-jwt
+   supabase functions deploy drive-oauth-callback --no-verify-jwt
+   ```
 
-Storage quotas, upload limits and shared-account concurrency are handled
-server-side; the client only ever sees what it is allowed to see.
+   `--no-verify-jwt` is deliberate: the platform's own JWT gate cannot be used
+   because the Google callback arrives with no Supabase token at all. Both
+   functions verify the caller themselves — `vault` from the `Authorization`
+   header, `drive-oauth-callback` from an HMAC-signed `state` parameter plus a
+   fresh `family_members` lookup.
 
-## 7. Verifying the setup (before Phase 5 exists)
+## 6. How it works
 
-You can confirm the *Google* half independently:
+1. A family **owner/admin** opens `/vault` and taps *Connect Google Drive*. The
+   page asks the `vault` function for a consent URL; the function signs a
+   `state` value (family id + user id + nonce + timestamp, HMAC-SHA256) with
+   `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY`.
+2. The browser goes to Google, the user approves `drive.file`.
+3. Google redirects to `drive-oauth-callback`. The function verifies the
+   `state` signature, re-checks that the user is still an owner/admin of that
+   family, exchanges the code for a **refresh token**, encrypts it with
+   AES-256-GCM (key derived from the same secret through HKDF), and upserts it
+   into `vault_connections` — a table no client role can read.
+4. It creates the `Our Cousin Family` folder, then redirects to
+   `SITE_URL/vault?drive=connected`.
+5. Uploads go browser → `vault` function → Drive. The function checks
+   membership, writes the `vault_items` index row, uploads the bytes, and reads
+   back Drive's own metadata (size, EXIF capture time) before marking the row
+   `ready`.
+6. Reads go through `/api/drive/content?item=<id>`. `<img>` and `<video>` cannot
+   send an `Authorization` header, so that Next.js route forwards the caller's
+   session cookie as a bearer token to the function, which checks membership
+   against the item's family and streams the bytes back. `Range` is forwarded,
+   so video seeking works.
+7. Photos are downscaled in the browser before upload (2560 px long edge, JPEG
+   q0.85) and the EXIF capture date is read *before* re-encoding, so the archive
+   can be grouped by the year the memory actually happened.
 
-1. Open the OAuth playground to test your client:
-   <https://developers.google.com/oauthplayground>.
-2. Click the gear icon → **Use your own OAuth credentials** → paste the
-   Client ID / secret.
-3. Authorise the `drive.file` scope with the owner account and confirm Google
-   shows the consent screen for *Our Cousin Family* without an
-   `access_denied` error.
+Every read and write is gated twice: Postgres RLS (`vault_item_family_id` +
+`is_family_member`) for the index rows, and an explicit `family_members` check
+inside the Edge Functions for the Drive bytes.
 
-If that works, the credentials are correct and Phase 5 can rely on them.
+## 7. Verifying the setup
+
+1. **Google half, independently of the app:** open the OAuth playground
+   <https://developers.google.com/oauthplayground>, click the gear icon → **Use
+   your own OAuth credentials** → paste the Client ID/secret, authorise
+   `drive.file`, and confirm the consent screen appears without
+   `access_denied`.
+2. **Secrets are set:**
+   ```bash
+   supabase secrets list
+   ```
+   You should see the four names from step 5 (values are hashed).
+3. **Functions are deployed:**
+   ```bash
+   curl -i "https://<project-ref>.supabase.co/functions/v1/vault?action=status&family_id=<uuid>"
+   ```
+   With no `Authorization` header this must answer **401**, not 200 and not 404.
+   A 404 means the function is not deployed; the `/vault` page will show the
+   same thing.
+4. **In the app:** open `/vault` as a family owner. You should see *Connect
+   Google Drive*, complete the consent screen, land back on `/vault?drive=connected`,
+   and see the connected account's email. Upload one photo and confirm it
+   appears — and that it exists in the `Our Cousin Family` folder in Drive.
 
 ## Troubleshooting
 
@@ -176,3 +208,7 @@ If that works, the credentials are correct and Phase 5 can rely on them.
 | Vault works for a week, then `invalid_grant` | Expected for **Testing**-mode apps: refresh tokens expire after 7 days (see step 3) |
 | `insufficientPermissions` when creating files | `drive.file` scope missing, or the token was minted before the scope was added — re-connect to mint a new token |
 | Secrets appear in client bundle | A variable was prefixed with `NEXT_PUBLIC_`. Remove the prefix and rotate the credential in Google Cloud |
+| `/vault` says *the Vault server function has not been deployed* | `vault` is not deployed, or `NEXT_PUBLIC_SUPABASE_URL` is wrong in the Vercel project. Re-run `supabase functions deploy vault` |
+| `/vault` says the Google credentials are not set | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY` are missing from `supabase secrets list` |
+| Photos show as broken images | The `vault` function is deployed but `drive-oauth-callback` was skipped, so no refresh token exists — connect Drive first |
+| Changing `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY` breaks every read | It decrypts the stored refresh tokens. Changing it makes existing tokens unreadable; reconnect Drive (or keep the old key) |

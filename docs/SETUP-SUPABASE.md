@@ -35,6 +35,11 @@ config live in [`supabase/migrations/`](../supabase/migrations). Apply them
       storage policies, realtime publication
    4. `20261016040000_rpc_extras.sql` — `get_unread_counts()`,
       `get_conversation_summaries()`, `bump_conversation_activity()` trigger
+   5. `20261016050000_family_calendar.sql` — events + RSVPs (RLS, realtime)
+   6. `20261016060000_ludo.sql` — the whole Ludo engine: tables, server-side
+      RNG, rules, turn timers, `ludo_*` RPCs (see **docs/ludo-rules.md**)
+   7. `20261016070000_vault.sql` — Memory Vault index tables, RLS, and the
+      column-level grants clients need to favourite or caption a memory
 
    > Run them one at a time in order — later files reference functions
    > created by earlier ones.
@@ -158,12 +163,20 @@ npm run dev
 If anything fails, the browser console + Supabase **Logs → Postgres** and
 **Logs → Auth** pinpoint whether it's schema, policy, or email config.
 
-## Later phases (don't do these yet)
+## Deploying the Edge Functions and later services
 
-- **Edge Functions** (Drive token exchange, LiveKit tokens, Ludo engine)
-  live in `supabase/functions/` and are deployed with
-  `supabase functions deploy <name>` — see the Google Drive and LiveKit
-  guides, which arrive with Phases 5–6.
+- **Edge Functions** live in `supabase/functions/` and are deployed with
+  `supabase functions deploy <name>`. The Vault ships two
+  (`vault`, `drive-oauth-callback`) — see **docs/SETUP-GOOGLE-DRIVE.md** for the
+  exact commands and secrets. Both are deployed with `--no-verify-jwt` because
+  they verify the caller themselves (see that guide for why).
+- **The Ludo engine is not an Edge Function.** It is pure SQL: all game rules,
+  dice rolls and turn timers run inside `public.ludo_*` security-definer
+  functions in `supabase/migrations/20261016060000_ludo.sql`, so the server owns
+  randomness and legality and a client can never fake a roll. See
+  **docs/ludo-rules.md**.
+- **LiveKit tokens** are minted by an Edge Function — see
+  **docs/SETUP-LIVEKIT.md**.
 - **Database types**: after linking the CLI you can regenerate
   `src/types/database.types.ts` with
   `supabase gen types typescript --linked > src/types/database.types.ts`.

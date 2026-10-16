@@ -19,16 +19,19 @@ decision that matters is re-checked in Postgres.
 | `security definer` RPCs | Cross-row operations (join a family, approve a member, start a conversation) that re-check the caller's role *inside* Postgres | Authoritative |
 | Postgres triggers | Notification creation, `updated_at`, conversation activity, profile creation on signup | Authoritative, never client-driven |
 | Storage policies | Who may read/write each object in each private bucket | Authoritative |
-| Supabase Edge Functions *(Phase 5/6)* | All third-party secrets: Google refresh tokens, LiveKit key/secret, game RNG | Authoritative, server-only |
+| Supabase Edge Functions | All third-party secrets: Google refresh tokens, Drive access | Authoritative, server-only |
 
 The proxy is a *routing* concern. If it were removed entirely, RLS would still
 prevent any family from reading another family's data.
 
 ## 2. Row Level Security
 
-RLS is **enabled on all 14 tables** and no table has a permissive `using
-(true)` policy. Policies live in
-[`20261016020000_authz_rls.sql`](../supabase/migrations/20261016020000_authz_rls.sql).
+RLS is **enabled on all 22 tables** and no table has a permissive `using
+(true)` policy. The core policies live in
+[`20261016020000_authz_rls.sql`](../supabase/migrations/20261016020000_authz_rls.sql);
+the calendar, Ludo and Vault tables add their own in
+`20261016050000_family_calendar.sql`, `20261016060000_ludo.sql` and
+`20261016070000_vault.sql`.
 
 | Table | Read | Write |
 | --- | --- | --- |
@@ -41,11 +44,17 @@ RLS is **enabled on all 14 tables** and no table has a permissive `using
 | `conversations` / `conversation_members` | Conversation members | Membership changes via RPCs; members may update their own row |
 | `messages` / `message_attachments` | Conversation members | Sender may edit; sender or family admin may delete |
 | `notifications` | Own rows | Own rows (read/delete); inserts come from triggers |
+| `family_events` / `event_rsvps` | Family members | Creator or family admin; RSVPs are own-row only |
+| `ludo_games` / `ludo_seats` / `ludo_actions` | Family members (**select only**) | No client write path at all — every mutation goes through `ludo_*` security-definer RPCs, so the dice and the legality checks stay server-side |
+| `vault_items` | Family members | `select` plus `update` on `is_favorite` and `caption` **only** (column-level grants); rows are created and deleted by the Vault Edge Function |
+| `vault_item_people` | Family members | Members of the item's family may tag/untag |
+| `vault_connections` | **Nobody** — RLS on, no policy, `revoke all` | The OAuth callback (service role) only |
 
 **Helper functions** (`is_family_member`, `family_role`, `shares_family_with`,
-`is_conversation_member`, …) are `stable`, `security definer`, and pinned with
-`set search_path` to avoid search-path hijacking. They are the only functions
-granted to `anon`/`authenticated` besides the RPC entry points.
+`is_conversation_member`, `ludo_game_family_id`, `vault_item_family_id`, …) are
+`stable`, `security definer`, and pinned with `set search_path` to avoid
+search-path hijacking. They are the only functions granted to
+`anon`/`authenticated` besides the RPC entry points.
 
 **Function grants** are locked down explicitly. Postgres grants `EXECUTE` on
 new functions to the `PUBLIC` pseudo-role, which every role inherits — so
@@ -108,11 +117,31 @@ render time (`resolveAvatarUrl` / `resolveMediaUrl`), so a leaked URL expires.
 ## 6. Secrets
 
 - The **anon key** is public by design — it is useless without RLS.
-- The **service-role key is not used in M1** and is absent from the client.
-- Google client secret, LiveKit API secret and the refresh-token encryption
-  key are server-only and are destined for **Supabase Edge Function secrets**.
+- The **service-role key is not used in the Next.js app at all.** It exists only
+  inside the Vault Edge Functions, where the platform injects it, and is never
+  sent to a client.
+- Google client ID/secret, `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY` and `SITE_URL`
+  are **Supabase Edge Function secrets** (`supabase secrets set`), not Vercel
+  environment variables. `.env.example` lists them for reference only.
+- LiveKit's key/secret will follow the same pattern when calls are built.
 - `.env.example` contains placeholders only; `.env.local` is git-ignored.
 - No secret is ever prefixed with `NEXT_PUBLIC_`.
+
+### The Vault specifically
+
+Third-party credentials are the highest-value target in this app, so the Vault
+is built to keep them off every client:
+
+| Control | What it prevents |
+| --- | --- |
+| `vault_connections` has RLS enabled and **no policy for any client role**, plus `revoke all` on the table | Even a family owner cannot read the stored refresh token through PostgREST — the column is unreachable by design |
+| The refresh token is encrypted with **AES-256-GCM**; the key is derived from `GOOGLE_REFRESH_TOKEN_ENCRYPTION_KEY` through HKDF with a purpose label | A database leak alone does not yield a usable Drive token |
+| The OAuth `state` parameter is **HMAC-SHA256 signed** and expires after 15 minutes | Forging a callback that points another family's Vault at the attacker's Drive account |
+| The callback re-checks `family_members` after verifying the signature | A user who was an admin when the flow started but was removed mid-flow |
+| `vault_items` grants clients `select` plus `update` on **two columns only** (`is_favorite`, `caption`) | Rewriting `drive_file_id`, `family_id`, `added_by` or `upload_state` from the browser |
+| Uploads and deletes run in the Edge Function with explicit membership checks; delete is limited to the uploader or a family admin | A member of another family — or an unrelated member deleting someone else's memory |
+| `/api/drive/content` reads the Supabase session cookie server-side and forwards it as a bearer token; responses are `cache-control: private` | A shared cache serving one family's photo to another user |
+| The Drive scope is `drive.file` only | The app can never see the user's unrelated Drive files |
 
 ## 7. Realtime
 
@@ -121,6 +150,11 @@ policies — a client only receives rows it is allowed to `select`. Chat
 **typing indicators** use ephemeral broadcast channels scoped to the
 conversation; presence is private per family. No table row is broadcast that
 RLS would hide from the subscriber.
+
+`ludo_games`, `ludo_seats`, `ludo_actions`, `family_events`, `event_rsvps` and
+`vault_items` are added to the publication for the same reason: they are
+select-only for clients, so broadcasting a change can only ever reveal a row
+the subscriber could already read with a `select`.
 
 ## 8. Known gaps and limitations
 
@@ -157,9 +191,20 @@ Being explicit about what is **not** yet done:
    there is no tombstone or admin audit log.
 8. **Email is limited by Supabase's default rate limits** until custom SMTP
    is configured; this is a deliverability (not confidentiality) concern.
-9. **Drive and LiveKit features store refresh tokens / mint tokens in Phase
-   5–6.** Until those functions exist and are reviewed, the Vault and Calls
-   placeholders intentionally do nothing.
+9. **The Vault and the Ludo engine are untested against the real platform.**
+   The Ludo rules are Bcrypt-free pure SQL exercised by `npm run db:check`; the
+   Vault's Edge Functions cannot be executed locally at all (no Deno runtime
+   here), so they have been reviewed by hand but never run. They are the most
+   likely place for a first-deploy bug. Deploy `vault` and
+   `drive-oauth-callback` to a scratch project and walk the flow once before
+   inviting family members.
+10. **Vault uploads are not virus-scanned and not size-enforced per family.**
+    The only limit is 40 MB per file, enforced in the Edge Function. A family
+    member can fill the connected Drive account's quota.
+11. **The Vault shares one Google account per family.** Anyone who can read
+    `vault_connections` in the Supabase dashboard (i.e. the project owner) can
+    decrypt the refresh token with the encryption key. This is a single-tenant
+    design choice, not an oversight, but it is worth stating.
 
 ## 9. Reporting
 

@@ -241,3 +241,35 @@ export const ludoActionSchema = z.object({
   game_id: uuidSchema,
   expected_version: z.number().int().nonnegative(),
 });
+
+// ----------------------------------------------------------------------------
+// Memory Vault
+// ----------------------------------------------------------------------------
+
+export const vaultKinds = ["photo", "video", "audio", "document", "other"] as const;
+
+/**
+ * Upload metadata sent to the `vault` Edge Function alongside the file. The
+ * function still checks membership and Drive configuration server-side; this
+ * only stops malformed requests from leaving the browser.
+ */
+export const vaultUploadSchema = z.object({
+  family_id: uuidSchema,
+  name: z.string().trim().min(1, "Give the memory a name").max(300),
+  kind: z.enum(vaultKinds),
+  caption: z.string().trim().max(2000).optional().or(z.literal("")),
+  captured_at: z.string().datetime().optional().or(z.literal("")),
+  event_id: uuidSchema.optional().or(z.literal("")),
+});
+
+/** Metadata-only edits the client may make (mirrors the column-level grants). */
+export const vaultItemUpdateSchema = z.object({
+  id: uuidSchema,
+  caption: z.string().trim().max(2000).nullable().optional(),
+  is_favorite: z.boolean().optional(),
+});
+
+export const vaultTagSchema = z.object({
+  item_id: uuidSchema,
+  profile_id: uuidSchema,
+});

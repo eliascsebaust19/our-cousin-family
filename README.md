@@ -23,19 +23,19 @@ credentials and a real backend.
 | Feed (posts, media, reactions, comments, bookmarks, pinning) | ✅ Code complete |
 | Chat (direct + group, text, photos, voice notes, typing, edit/delete) | ✅ Code complete |
 | Notifications, profile, settings, themes | ✅ Code complete |
+| Family calendar (events, RSVPs, realtime) | ✅ Code complete |
+| Ludo — server-authoritative engine + UI (4/6/8 players) | ✅ Code complete, engine verified by `npm run db:check` |
+| Memory Vault (Google Drive) | ✅ Code complete (Edge Functions + RLS + UI) — needs Google credentials to run |
 | Migrations + RLS policies | ✅ Verified by `npm run db:check`, **not yet applied** (no Supabase project exists) |
-| Memory Vault (Google Drive) | 🚧 Placeholder page — needs a Google Cloud project (Phase 5) |
-| LiveKit calls | 🚧 Placeholder page — needs LiveKit Cloud keys (Phase 6) |
-| Ludo (4/6/8 players) | 🚧 Placeholder page — engine ships in Phase 4 |
-| Family calendar | 🚧 Placeholder page — ships in Phase 4 |
-| Automated tests (Vitest + Playwright) | ⏳ Planned for Phase 9 |
+| LiveKit calls | 🚧 Placeholder page — needs LiveKit Cloud keys |
+| Automated tests (Vitest + Playwright) | ⏳ Planned for the final milestone |
 | First deployment | ⏳ Blocked on your Supabase + Vercel accounts (see guides) |
 
 **The app has never yet run against a live backend.** It will not start
 meaningfully until you create a Supabase project and apply the migrations —
-see [docs/SETUP-SUPABASE.md](docs/SETUP-SUPABASE.md). The placeholder pages
-are deliberate: this project never simulates an integration that isn't
-configured.
+see [docs/SETUP-SUPABASE.md](docs/SETUP-SUPABASE.md). The remaining placeholder
+page (Calls) is deliberate: this project never simulates an integration that
+isn't configured.
 
 ---
 
@@ -50,7 +50,8 @@ configured.
   links + Google OAuth), Realtime (postgres_changes + broadcast + presence),
   private Storage buckets, Edge Functions (all secrets live server-side)
 - **Motion** — used sparingly for list/dialog entrances
-- Later phases: **Google Drive API** (Memory Vault), **LiveKit** (calls)
+- **Google Drive API** (Memory Vault) — server-side only, via Edge Functions
+- Still to come: **LiveKit** (audio/video calls)
 
 ## Features
 
@@ -154,12 +155,20 @@ src/
     join/, join/[code]      Public invitation preview + join (own layout)
     (app)/                  Authenticated shell: home, create, family/*,
                             chat/*, notifications, profile/*, settings,
-                            vault/ludo/calls/calendar (honest placeholders)
+                            calendar, ludo, vault
+    api/drive/content       cookie-auth proxy streaming Vault bytes
+                            (media tags cannot send an auth header)
   components/               feature-grouped client components
   lib/                      supabase clients, validation (Zod), queries,
-                            uploads, rate-limit, formatting, constants
+                            uploads, rate-limit, formatting, constants,
+                            ludo geometry, EXIF, image downscaling
   types/database.types.ts   hand-written Database types (regenerate with
                             `supabase gen types` once linked)
+supabase/
+  migrations/               schema + RLS + RPCs (see docs/SETUP-SUPABASE.md)
+  functions/vault/          Memory Vault: status, connect, upload, delete
+  functions/drive-oauth-callback/  Google OAuth redirect target
+  functions/_shared/        token encryption, OAuth state signing, Drive API
 scripts/
   check-migrations.mjs      `npm run db:check` — applies the migrations to
                             in-process Postgres and asserts RLS/grants
@@ -193,8 +202,21 @@ Deploy to Vercel after Supabase is set up:
   (PGlite) with Supabase stubs, but **have not yet been applied to a real
   Supabase project** — expect to fix small environment differences on first
   apply.
-- Memory Vault, Ludo, Calls, and Calendar are placeholder pages that state
-  exactly what they need — they do nothing fake.
+- **Memory Vault**: the code is complete, but nothing works until you create a
+  Google Cloud project, set four Supabase secrets and deploy the two Edge
+  Functions ([docs/SETUP-GOOGLE-DRIVE.md](docs/SETUP-GOOGLE-DRIVE.md)). The
+  `/vault` page detects each missing step and says so. Uploads are capped at
+  40 MB per file (photos are downscaled in the browser first); video is stored
+  and streamed but never transcoded, so playback depends on the codec the phone
+  recorded. While the OAuth app is in **Testing** mode Google expires refresh
+  tokens after 7 days, so the connection must be re-authorised weekly until the
+  app is published.
+- **Ludo**: the engine (dice, legality, turn timers, rankings) runs entirely in
+  Postgres security-definer functions, verified by `npm run db:check`; the UI
+  drives it over RPC + Realtime. `ludo_seats.autoplay` exists in the schema but
+  has no RPC yet, so "let the computer play for me" is not exposed.
+- **Calls** is still a placeholder page that states exactly what it needs — it
+  does nothing fake.
 - Chat voice notes rely on the browser's MediaRecorder (WebM/Opus on most
   browsers; Safari support varies).
 - Email delivery (confirm signup, reset password) uses Supabase's default
@@ -203,13 +225,15 @@ Deploy to Vercel after Supabase is set up:
   are in-app only.
 - `src/types/database.types.ts` is hand-written; regenerate it with
   `supabase gen types typescript --linked` after linking the CLI.
-- Automated tests are planned for Phase 9 of the build plan.
+- Automated tests (Vitest + Playwright) are planned for the final milestone;
+  today `npm run db:check`, `typecheck`, `lint` and `build` are the gates.
 
 ## Milestones
 
-1. **M1 (current)** — core app: scaffold, schema + RLS, auth, families,
-   feed, chat, notifications, docs, first deploy.
-2. **M2** — Memory Vault (Google Drive), LiveKit calls, Ludo (rules doc
-   first, then a server-authoritative engine), calendar.
-3. **M3** — polish, Vitest + Playwright coverage, security audit, final
+1. **M1 — done.** Core app: scaffold, schema + RLS, auth, families, feed, chat,
+   notifications, docs.
+2. **M2 — nearly done.** ✅ Family calendar, ✅ Ludo (server-authoritative
+   engine + UI for 4/6/8 players), ✅ Memory Vault (Drive Edge Functions, RLS,
+   UI). 🚧 LiveKit audio/video calls.
+3. **M3** — polish, Vitest + Playwright coverage, security audit, first
    deploy.

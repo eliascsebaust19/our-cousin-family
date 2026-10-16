@@ -838,6 +838,142 @@ export interface Database {
           },
         ];
       };
+      vault_connections: {
+        Row: {
+          family_id: string;
+          account_email: string | null;
+          account_name: string | null;
+          refresh_token_enc: string;
+          scope: string | null;
+          revoked_at: string | null;
+          connected_by: string | null;
+          connected_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          family_id: string;
+          account_email?: string | null;
+          account_name?: string | null;
+          refresh_token_enc: string;
+          scope?: string | null;
+          revoked_at?: string | null;
+          connected_by?: string | null;
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          account_email?: string | null;
+          account_name?: string | null;
+          refresh_token_enc?: string;
+          scope?: string | null;
+          revoked_at?: string | null;
+          connected_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vault_connections_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      vault_items: {
+        Row: {
+          id: string;
+          family_id: string;
+          added_by: string;
+          drive_file_id: string | null;
+          drive_folder_id: string | null;
+          name: string;
+          mime_type: string;
+          size_bytes: number;
+          kind: string;
+          captured_at: string | null;
+          year: number | null;
+          event_id: string | null;
+          caption: string | null;
+          is_favorite: boolean;
+          upload_state: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          added_by: string;
+          drive_file_id?: string | null;
+          drive_folder_id?: string | null;
+          name: string;
+          mime_type?: string;
+          size_bytes?: number;
+          kind?: string;
+          captured_at?: string | null;
+          year?: number | null;
+          event_id?: string | null;
+          caption?: string | null;
+          is_favorite?: boolean;
+          upload_state?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        // Column-level grants expose exactly these two columns to clients.
+        Update: {
+          caption?: string | null;
+          is_favorite?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vault_items_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vault_items_added_by_fkey";
+            columns: ["added_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vault_items_event_id_fkey";
+            columns: ["event_id"];
+            referencedRelation: "family_events";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      vault_item_people: {
+        Row: {
+          item_id: string;
+          profile_id: string;
+          created_at: string;
+        };
+        Insert: {
+          item_id: string;
+          profile_id: string;
+          created_at?: string;
+        };
+        Update: {
+          item_id?: string;
+          profile_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vault_item_people_item_id_fkey";
+            columns: ["item_id"];
+            referencedRelation: "vault_items";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vault_item_people_profile_id_fkey";
+            columns: ["profile_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -959,6 +1095,10 @@ export interface Database {
       ludo_snapshot: {
         Args: { p_game_id: string };
         Returns: Json;
+      };
+      vault_item_family_id: {
+        Args: { p_item_id: string };
+        Returns: string;
       };
     };
     Enums: Record<string, never>;

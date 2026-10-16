@@ -223,3 +223,58 @@ export type LudoGameListItem = {
 /** Error messages raised by the engine that the UI reacts to specially. */
 export const LUDO_TURN_EXPIRED = "turn_expired";
 export const LUDO_STALE_STATE = "stale_state";
+
+// ---------------------------------------------------------------------------
+// Memory Vault — Google Drive backed archive
+// ---------------------------------------------------------------------------
+
+export type VaultKind = "photo" | "video" | "audio" | "document" | "other";
+
+/** One tagged relative: "who is in the picture". */
+export type VaultPerson = {
+  profile_id: string;
+  profile: ProfileLite | null;
+};
+
+/** A row of `public.vault_items` with its embedded relations. */
+export type VaultItem = {
+  id: string;
+  family_id: string;
+  added_by: string;
+  drive_file_id: string | null;
+  drive_folder_id: string | null;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  kind: string;
+  captured_at: string | null;
+  year: number | null;
+  event_id: string | null;
+  caption: string | null;
+  is_favorite: boolean;
+  upload_state: string;
+  created_at: string;
+  updated_at: string;
+  added_by_profile: ProfileLite | null;
+  event: { id: string; title: string } | null;
+  people: VaultPerson[];
+};
+
+/**
+ * What the Edge Function reports about the Drive link. `configured` is false
+ * when the Google secrets have not been set yet, and `connected` is false when
+ * no family admin has authorized the Drive account — the UI uses this to show
+ * the real setup steps instead of pretending the Vault works.
+ */
+export type VaultStatus = {
+  configured: boolean;
+  connected: boolean;
+  canConnect: boolean;
+  accountEmail: string | null;
+  accountName: string | null;
+  /** Set when Google reported the stored refresh token is no longer valid. */
+  revoked: boolean;
+  /** Human-readable reason when `configured` is false. */
+  reason: string | null;
+  folderName: string | null;
+};

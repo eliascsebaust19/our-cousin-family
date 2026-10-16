@@ -58,6 +58,7 @@ export const channels = {
   calendar: (familyId: string) => `calendar:${familyId}`,
   ludoGame: (gameId: string) => `ludo-game:${gameId}`,
   ludoLobby: (familyId: string) => `ludo-lobby:${familyId}`,
+  vault: (familyId: string) => `vault:${familyId}`,
 };
 
 /** Lobby rows: a game with its seats and the player sitting in each one. */
@@ -67,5 +68,22 @@ export const LUDO_GAME_SELECT = `
   seats:ludo_seats!ludo_seats_game_id_fkey(
     id, game_id, seat, user_id, color, autoplay, placement,
     profile:profiles!ludo_seats_user_id_fkey(id, full_name, nickname, avatar_url)
+  )
+`;
+
+/**
+ * Vault rows: the Drive metadata plus who added it, which event it belongs to,
+ * and who is tagged in it. `profiles` is JOINed twice, so both are pinned to
+ * explicit foreign keys.
+ */
+export const VAULT_SELECT = `
+  id, family_id, added_by, drive_file_id, drive_folder_id, name, mime_type,
+  size_bytes, kind, captured_at, year, event_id, caption, is_favorite,
+  upload_state, created_at, updated_at,
+  added_by_profile:profiles!vault_items_added_by_fkey(${PROFILE_FIELDS}),
+  event:family_events!vault_items_event_id_fkey(id, title),
+  people:vault_item_people!vault_item_people_item_id_fkey(
+    profile_id,
+    profile:profiles!vault_item_people_profile_id_fkey(${PROFILE_FIELDS})
   )
 `;

@@ -102,3 +102,22 @@ begin
     create publication supabase_realtime;
   end if;
 end $$;
+
+-- --- default privileges ------------------------------------------------------
+-- A hosted Supabase project runs, as the `postgres` role:
+--
+--   alter default privileges in schema public
+--     grant all on tables to anon, authenticated, service_role;
+--
+-- so a table created by a migration is born with full grants to the API roles
+-- and security rests entirely on RLS. The ordering matters: the grant happens
+-- at CREATE TABLE time, *before* the rest of the migration body runs, which is
+-- what lets a migration revoke those grants again — as the Vault does to expose
+-- UPDATE on two columns only.
+--
+-- Emulating it with `alter default privileges` (rather than one blanket GRANT
+-- after all migrations) is what makes those revokes observable here.
+alter default privileges in schema public
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to anon, authenticated, service_role;

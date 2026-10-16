@@ -24,9 +24,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDir = join(root, "supabase", "migrations");
 const stubsPath = join(root, "scripts", "pglite", "supabase-stubs.sql");
 
-const EXPECTED_PUBLIC_TABLES = 19; // 14 core + 2 calendar + 3 ludo
+const EXPECTED_PUBLIC_TABLES = 22; // 14 core + 2 calendar + 3 ludo + 3 vault
 const EXPECTED_BUCKETS = 3;
-const EXPECTED_REALTIME_TABLES = 12; // 8 core + 2 calendar + 2 ludo
+const EXPECTED_REALTIME_TABLES = 13; // 8 core + 2 calendar + 2 ludo + 1 vault
 
 /** RPCs an authenticated member may call. */
 const AUTHENTICATED_RPCS = [
@@ -52,6 +52,7 @@ const AUTHENTICATED_RPCS = [
   "public.ludo_pass(uuid, int)",
   "public.ludo_auto_resolve(uuid)",
   "public.ludo_snapshot(uuid)",
+  "public.vault_item_family_id(uuid)",
 ];
 
 /** RPCs an anonymous (signed-out) caller must NOT be able to call. */
@@ -216,6 +217,47 @@ const { rows: ludoFamHelper } = await db.query(
 );
 check("anon cannot execute the ludo game helper", ludoFamHelper[0].ok === false);
 
+// The Vault's table is unreadable from the API on purpose — the Drive refresh
+// token lives in it, and only the Edge Functions (service_role) may look.
+const { rows: vaultConnRows } = await db.query(
+  `select
+     has_table_privilege('anon', 'public.vault_connections', 'select') as anon_select,
+     has_table_privilege('authenticated', 'public.vault_connections', 'select') as auth_select,
+     has_table_privilege('authenticated', 'public.vault_connections', 'update') as auth_update`,
+);
+check(
+  "no API role can read the Drive connection",
+  vaultConnRows[0].anon_select === false &&
+    vaultConnRows[0].auth_select === false &&
+    vaultConnRows[0].auth_update === false,
+  JSON.stringify(vaultConnRows[0]),
+);
+
+// Column-level grants: members may favourite or re-caption a memory, but never
+// rewrite the Drive pointers (that would let one family claim another's file).
+const { rows: vaultColumnRows } = await db.query(
+  `select
+     has_column_privilege('authenticated', 'public.vault_items', 'is_favorite', 'update') as fav,
+     has_column_privilege('authenticated', 'public.vault_items', 'caption', 'update') as caption,
+     has_column_privilege('authenticated', 'public.vault_items', 'drive_file_id', 'update') as drive_id,
+     has_column_privilege('authenticated', 'public.vault_items', 'family_id', 'update') as family_id,
+     has_table_privilege('authenticated', 'public.vault_items', 'insert') as ins,
+     has_table_privilege('authenticated', 'public.vault_items', 'delete') as del`,
+);
+check(
+  "members may update only the safe vault columns",
+  vaultColumnRows[0].fav === true &&
+    vaultColumnRows[0].caption === true &&
+    vaultColumnRows[0].drive_id === false &&
+    vaultColumnRows[0].family_id === false,
+  JSON.stringify(vaultColumnRows[0]),
+);
+check(
+  "vault rows are created and deleted server-side only",
+  vaultColumnRows[0].ins === false && vaultColumnRows[0].del === false,
+  JSON.stringify(vaultColumnRows[0]),
+);
+
 // ---------------------------------------------------------------------------
 // Behaviour: exercise the policies and RPCs as the real anon/authenticated
 // roles (with a JWT `sub` claim), which is the only way to prove that the
@@ -223,13 +265,14 @@ check("anon cannot execute the ludo game helper", ludoFamHelper[0].ok === false)
 // ---------------------------------------------------------------------------
 console.log("\nBehaviour (as anon / authenticated)");
 
-// Supabase grants table privileges to the API roles and relies on RLS to filter
-// rows; mirror that here (equivalent to its default privileges).
+// Table/sequence privileges are handed to the API roles by the stub's
+// `ocf_default_privileges` event trigger, which mimics Supabase's
+// `alter default privileges` at CREATE TABLE time. That ordering matters: a
+// migration may revoke them again (the Vault grants UPDATE on two columns
+// only), and a blanket grant here would silently undo it.
 await db.exec(`
   grant usage on schema public to anon, authenticated, service_role;
   grant usage on schema storage to anon, authenticated, service_role;
-  grant all on all tables in schema public to anon, authenticated, service_role;
-  grant all on all sequences in schema public to anon, authenticated, service_role;
   grant all on storage.objects, storage.buckets to anon, authenticated, service_role;
 `);
 
@@ -1041,6 +1084,152 @@ check(
 await asRole("authenticated", B, () =>
   expectError("a non-member cannot read the snapshot",
     "select public.ludo_snapshot($1)", [ludoId]),
+);
+
+// --- Memory Vault ------------------------------------------------------------
+// Rows are written by the Edge Functions running as service_role; the harness
+// plays that role for fixtures, exactly like Supabase's SQL editor would.
+console.log("\nMemory Vault (Drive-backed archive)");
+
+const vaultEvent = await db.query(
+  `insert into public.family_events (family_id, created_by, title, starts_at)
+   values ($1, $2, 'Eid 2019', '2019-06-04T09:00:00Z') returning id`,
+  [FAM_A, A],
+);
+const vaultEventId = vaultEvent.rows[0].id;
+
+const vaultItem = await db.query(
+  `insert into public.vault_items
+     (family_id, added_by, drive_file_id, name, mime_type, size_bytes, kind,
+      captured_at, year, event_id, upload_state)
+   values ($1, $2, 'drive-file-alpha', 'Cousins at Eid.jpg', 'image/jpeg', 512345,
+           'photo', '2019-06-04T10:00:00Z', 2019, $3, 'ready')
+   returning id`,
+  [FAM_A, A, vaultEventId],
+);
+const vaultItemId = vaultItem.rows[0].id;
+
+await db.query(
+  `insert into public.vault_items
+     (family_id, added_by, drive_file_id, name, kind, year, upload_state)
+   values ($1, $2, 'drive-file-other', 'Other family.jpg', 'photo', 2020, 'ready')`,
+  [FAM_B, B],
+);
+
+const vaultSeenByA = await asRole("authenticated", A, () =>
+  db.query("select count(*)::int as n from public.vault_items"),
+);
+check(
+  "a member sees their own family's memories",
+  vaultSeenByA.rows[0].n === 1,
+  `saw ${vaultSeenByA.rows[0].n}`,
+);
+const vaultSeenByB = await asRole("authenticated", B, () =>
+  db.query("select count(*)::int as n from public.vault_items"),
+);
+check(
+  "another family sees only its own memories",
+  vaultSeenByB.rows[0].n === 1,
+  `saw ${vaultSeenByB.rows[0].n}`,
+);
+await asRole("anon", null, () =>
+  expectError("signed-out callers cannot list memories",
+    "select count(*) from public.vault_items", []),
+);
+
+// Metadata edits the app legitimately makes.
+const vaultFav = await asRole("authenticated", C, () =>
+  db.query(
+    "update public.vault_items set is_favorite = true where id = $1 returning is_favorite",
+    [vaultItemId],
+  ),
+);
+check("a member can favourite a memory", vaultFav.rows[0]?.is_favorite === true);
+
+await asRole("authenticated", A, () =>
+  expectError("the Drive pointer cannot be rewritten from a client",
+    "update public.vault_items set drive_file_id = 'hijacked' where id = $1", [vaultItemId]),
+);
+await asRole("authenticated", A, () =>
+  expectError("a client cannot move a memory into another family",
+    "update public.vault_items set family_id = $1 where id = $2", [FAM_B, vaultItemId]),
+);
+await asRole("authenticated", A, () =>
+  expectError("a client cannot insert vault rows directly",
+    `insert into public.vault_items (family_id, added_by, name)
+     values ($1, $2, 'sneaky.jpg')`, [FAM_A, A]),
+);
+await asRole("authenticated", A, () =>
+  expectError("a client cannot delete vault rows directly",
+    "delete from public.vault_items where id = $1", [vaultItemId]),
+);
+
+// RLS scopes updates by ownership; an invisible row simply matches nothing.
+const vaultCrossFav = await asRole("authenticated", B, () =>
+  db.query(
+    "update public.vault_items set is_favorite = true where id = $1 returning id",
+    [vaultItemId],
+  ),
+);
+check(
+  "another family cannot touch this memory",
+  vaultCrossFav.rows.length === 0,
+  `${vaultCrossFav.rows.length} row(s) updated`,
+);
+
+// "Who's in the picture" — tags are a real join table with enforced FKs.
+const vaultTag = await asRole("authenticated", C, () =>
+  db.query(
+    "insert into public.vault_item_people (item_id, profile_id) values ($1, $2) returning item_id",
+    [vaultItemId, C],
+  ),
+);
+check("a member can tag who is in the picture", vaultTag.rows.length === 1);
+await asRole("authenticated", B, () =>
+  expectError("another family cannot tag this memory",
+    "insert into public.vault_item_people (item_id, profile_id) values ($1, $2)",
+    [vaultItemId, B]),
+);
+const vaultTagsForB = await asRole("authenticated", B, () =>
+  db.query("select count(*)::int as n from public.vault_item_people"),
+);
+check(
+  "tags do not leak across families",
+  vaultTagsForB.rows[0].n === 0,
+  `saw ${vaultTagsForB.rows[0].n}`,
+);
+
+const vaultHelperAsC = await asRole("authenticated", C, () =>
+  db.query("select public.vault_item_family_id($1) as family_id", [vaultItemId]),
+);
+check(
+  "vault_item_family_id resolves the owning family",
+  vaultHelperAsC.rows[0].family_id === FAM_A,
+  vaultHelperAsC.rows[0].family_id,
+);
+
+// Referential behaviour: deleting the linked event keeps the memory, and
+// deleting the memory takes its tags with it.
+await db.query("delete from public.family_events where id = $1", [vaultEventId]);
+const vaultAfterEventDelete = await db.query(
+  "select event_id from public.vault_items where id = $1",
+  [vaultItemId],
+);
+check(
+  "deleting an event keeps the memory but drops the link",
+  vaultAfterEventDelete.rows[0].event_id === null,
+  vaultAfterEventDelete.rows[0].event_id,
+);
+
+await db.query("delete from public.vault_items where id = $1", [vaultItemId]);
+const vaultTagsAfterDelete = await db.query(
+  "select count(*)::int as n from public.vault_item_people where item_id = $1",
+  [vaultItemId],
+);
+check(
+  "deleting a memory removes its tags",
+  vaultTagsAfterDelete.rows[0].n === 0,
+  `found ${vaultTagsAfterDelete.rows[0].n}`,
 );
 
 // --- Report ------------------------------------------------------------------
