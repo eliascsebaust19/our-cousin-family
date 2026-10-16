@@ -24,9 +24,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDir = join(root, "supabase", "migrations");
 const stubsPath = join(root, "scripts", "pglite", "supabase-stubs.sql");
 
-const EXPECTED_PUBLIC_TABLES = 16; // 14 core + family_events + event_rsvps
+const EXPECTED_PUBLIC_TABLES = 19; // 14 core + 2 calendar + 3 ludo
 const EXPECTED_BUCKETS = 3;
-const EXPECTED_REALTIME_TABLES = 10; // 8 core + family_events + event_rsvps
+const EXPECTED_REALTIME_TABLES = 12; // 8 core + 2 calendar + 2 ludo
 
 /** RPCs an authenticated member may call. */
 const AUTHENTICATED_RPCS = [
@@ -44,6 +44,13 @@ const AUTHENTICATED_RPCS = [
   "public.touch_last_seen()",
   "public.get_unread_counts()",
   "public.get_conversation_summaries()",
+  "public.ludo_create_game(uuid, int, int)",
+  "public.ludo_join_game(uuid)",
+  "public.ludo_start_game(uuid)",
+  "public.ludo_roll(uuid, int, int)",
+  "public.ludo_move(uuid, int, int)",
+  "public.ludo_pass(uuid, int)",
+  "public.ludo_auto_resolve(uuid)",
 ];
 
 /** RPCs an anonymous (signed-out) caller must NOT be able to call. */
@@ -181,6 +188,32 @@ const { rows: eventHelperRows } = await db.query(
   `select has_function_privilege('anon', 'public.event_family_id(uuid)', 'execute') as ok`,
 );
 check("anon cannot execute the event helper", eventHelperRows[0].ok === false);
+
+// The Ludo engine's internals (RNG, geometry, jsonb state readers) must stay
+// private — only the seven RPCs above are the callable surface.
+const { rows: ludoHelperRows } = await db.query(
+  `select p.proname,
+          has_function_privilege('anon', p.oid::regprocedure::text, 'execute') as anon_ok,
+          has_function_privilege('authenticated', p.oid::regprocedure::text, 'execute') as auth_ok
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'ludo\\_%'
+      and p.proname not in ('ludo_create_game', 'ludo_join_game', 'ludo_start_game',
+                            'ludo_roll', 'ludo_move', 'ludo_pass', 'ludo_auto_resolve',
+                            'ludo_game_family_id')
+      and (has_function_privilege('anon', p.oid::regprocedure::text, 'execute')
+        or has_function_privilege('authenticated', p.oid::regprocedure::text, 'execute'))`,
+);
+check(
+  "ludo internals are not callable by API roles",
+  ludoHelperRows.length === 0,
+  ludoHelperRows.map((r) => r.proname).join(", "),
+);
+
+const { rows: ludoFamHelper } = await db.query(
+  `select has_function_privilege('anon', 'public.ludo_game_family_id(uuid)', 'execute') as ok`,
+);
+check("anon cannot execute the ludo game helper", ludoFamHelper[0].ok === false);
 
 // ---------------------------------------------------------------------------
 // Behaviour: exercise the policies and RPCs as the real anon/authenticated
@@ -539,6 +572,459 @@ const rsvpsAfterDelete = await db.query(
   [eventId],
 );
 check("deleting an event cascades its RSVPs", rsvpsAfterDelete.rows[0].n === 0, `found ${rsvpsAfterDelete.rows[0].n}`);
+
+// --- Ludo engine -------------------------------------------------------------
+// The acceptance criteria in docs/ludo-rules.md §15, exercised end to end
+// against the real security-definer RPCs as the actual player roles.
+console.log("\nLudo engine (server-authoritative board)");
+
+/** PGlite hands back jsonb either parsed or as text — normalise both. */
+const j = (v) => (typeof v === "string" ? JSON.parse(v) : v);
+
+await db.query("select set_config('ocf.test_mode', 'on', false)");
+
+const ludoGame = await asRole("authenticated", A, () =>
+  db.query("select public.ludo_create_game($1, 4, 60) as id", [FAM_A]),
+);
+const ludoId = ludoGame.rows[0].id;
+check("a member creates a 4-seat game", !!ludoId, ludoId);
+
+check(
+  "C takes seat 1",
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_join_game($1) as seat", [ludoId]),
+  )).rows[0].seat === 1,
+);
+check(
+  "D takes seat 2",
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_join_game($1) as seat", [ludoId]),
+  )).rows[0].seat === 2,
+);
+
+await asRole("authenticated", C, () =>
+  expectError("only the host may start the game", "select public.ludo_start_game($1)", [ludoId]),
+);
+await asRole("authenticated", B, () =>
+  expectError("a non-member cannot join the game", "select public.ludo_join_game($1)", [ludoId]),
+);
+
+let snap = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_start_game($1) as s", [ludoId]),
+  )).rows[0].s,
+);
+check(
+  "the host starts the game with the lowest seat to move",
+  snap.status === "playing" && snap.turnSeat === 0 && snap.phase === "awaiting_roll",
+  JSON.stringify({ status: snap.status, turn: snap.turnSeat, phase: snap.phase }),
+);
+check(
+  "every token starts in the yard",
+  snap.state.tokens.length === 3 &&
+    snap.state.tokens.every((t) => JSON.stringify(t.progress) === "[-1,-1,-1,-1]"),
+  JSON.stringify(snap.state.tokens),
+);
+
+// The forced-dice escape hatch only exists for this harness.
+await db.query("select set_config('ocf.test_mode', 'off', false)");
+const forcedRefusal = await asRole("authenticated", A, () =>
+  expectError("a forced roll is refused outside the harness",
+    "select public.ludo_roll($1, $2, 6)", [ludoId, snap.version]),
+);
+check(
+  "the refusal names forced_dice_not_allowed",
+  String(forcedRefusal).includes("forced_dice_not_allowed"),
+  String(forcedRefusal),
+);
+await db.query("select set_config('ocf.test_mode', 'on', false)");
+
+// Rules §5 — a 1 cannot open the yard, so the turn is handed over.
+let r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "a roll with no legal move hands the turn over",
+  r.turnSeat === 1 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat} phase=${r.phase}`,
+);
+snap = r;
+
+// Rules §5 — a 6 opens the yard and buys another roll.
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "a six opens a yard exit for every token",
+  r.phase === "awaiting_move" && JSON.stringify(r.legalMoves) === "[0,1,2,3]",
+  `${r.phase} ${JSON.stringify(r.legalMoves)}`,
+);
+check("consecutive sixes are counted", r.consecutiveSixes === 1, r.consecutiveSixes);
+snap = r;
+
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "leaving the yard lands on the start square",
+  r.state.tokens[1].progress[0] === 0,
+  JSON.stringify(r.state.tokens[1].progress),
+);
+check(
+  "a six grants another roll",
+  r.turnSeat === 1 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat} phase=${r.phase}`,
+);
+snap = r;
+
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "the second six keeps the turn",
+  r.turnSeat === 1 && r.phase === "awaiting_move" && r.consecutiveSixes === 2,
+  `turn=${r.turnSeat} cs=${r.consecutiveSixes}`,
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("the second six's move lands", r.state.tokens[1].progress[0] === 6,
+  JSON.stringify(r.state.tokens[1].progress));
+snap = r;
+
+// Rules §5 — three consecutive sixes forfeit the turn.
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "three consecutive sixes forfeit the turn",
+  r.turnSeat === 2 && r.phase === "awaiting_roll" && r.dice === null && r.consecutiveSixes === 0,
+  `turn=${r.turnSeat} dice=${r.dice} cs=${r.consecutiveSixes}`,
+);
+snap = r;
+
+// Rules §6 — an overshoot is never a legal move (D's token is one from home).
+await db.query(
+  "update public.ludo_games set state = jsonb_set(state, '{tokens,2,progress,0}', '56'::jsonb) where id = $1",
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "overshooting home is never offered",
+  JSON.stringify(r.legalMoves) === "[1,2,3]",
+  JSON.stringify(r.legalMoves),
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_move($1, 1, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "the yard exit is taken from the offered set",
+  r.state.tokens[2].progress[1] === 0,
+  JSON.stringify(r.state.tokens[2].progress),
+);
+snap = r;
+
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("an exact roll is offered for the final step", r.legalMoves.includes(0),
+  JSON.stringify(r.legalMoves));
+snap = r;
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("an exact roll retires the token", r.state.tokens[2].progress[0] === 57,
+  JSON.stringify(r.state.tokens[2].progress));
+check("a plain move passes the turn", r.turnSeat !== 2 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat}`);
+snap = r;
+
+// Rules §7.1 — landing on a lone opponent on an unsafe square captures it.
+await db.query(
+  `update public.ludo_games
+      set state = jsonb_set(jsonb_set(state, '{tokens,0,progress}', '[5,-1,-1,-1]'::jsonb),
+                            '{tokens,1,progress}', '[6,46,-1,-1]'::jsonb)
+    where id = $1`,
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("only the advancing token is offered", JSON.stringify(r.legalMoves) === "[0]",
+  JSON.stringify(r.legalMoves));
+snap = r;
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "capturing sends the opponent back to the yard",
+  r.state.tokens[1].progress[1] === -1,
+  JSON.stringify(r.state.tokens[1].progress),
+);
+check(
+  "a capture grants another roll",
+  r.turnSeat === 0 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat} phase=${r.phase}`,
+);
+snap = r;
+
+// Authorization: only the seat on turn, only family members, only fresh state.
+await asRole("authenticated", C, () =>
+  expectError("only the seat on turn may roll",
+    "select public.ludo_roll($1, $2, 6)", [ludoId, snap.version]),
+);
+await asRole("authenticated", B, () =>
+  expectError("a non-member cannot play",
+    "select public.ludo_roll($1, $2, 1)", [ludoId, snap.version]),
+);
+
+// Rules §7.1 — a safe square protects whichever colour stands on it.
+await db.query(
+  "update public.ludo_games set state = jsonb_set(state, '{tokens,1,progress}', '[0,-1,-1,-1]'::jsonb) where id = $1",
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "a six opens every yard token",
+  JSON.stringify(r.legalMoves) === "[0,1,2,3]",
+  JSON.stringify(r.legalMoves),
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "a safe square protects the standing token",
+  r.state.tokens[0].progress[0] === 13 && r.state.tokens[1].progress[0] === 0,
+  JSON.stringify(r.state.tokens),
+);
+check(
+  "a six still grants another roll after a quiet move",
+  r.turnSeat === 0 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat}`,
+);
+snap = r;
+
+// Rules §7.2 — an opponent's pair blocks both landing and passage.
+await db.query(
+  `update public.ludo_games
+      set state = jsonb_set(jsonb_set(state, '{tokens,0,progress}', '[15,-1,-1,-1]'::jsonb),
+                            '{tokens,1,progress}', '[6,6,5,-1]'::jsonb)
+    where id = $1`,
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 6) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check(
+  "an opponent's block refuses landing and passage",
+  JSON.stringify(r.legalMoves) === "[1,2,3]",
+  JSON.stringify(r.legalMoves),
+);
+snap = r;
+
+await asRole("authenticated", A, () =>
+  expectError("optimistic concurrency rejects a stale move",
+    "select public.ludo_move($1, 0, $2)", [ludoId, snap.version + 100]),
+);
+
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_move($1, 1, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_move($1, 1, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("turn order wraps to the next seat", r.turnSeat === 1 && r.phase === "awaiting_roll",
+  `turn=${r.turnSeat}`);
+snap = r;
+
+// Rules §7.2 — your own colour never blocks you.
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("your own colour never blocks you", r.legalMoves.includes(2),
+  JSON.stringify(r.legalMoves));
+snap = r;
+r = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_move($1, 2, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+check("stacking on your own colour is legal", r.state.tokens[1].progress[2] === 6,
+  JSON.stringify(r.state.tokens[1].progress));
+snap = r;
+check("the turn moves on to D", r.turnSeat === 2, `turn=${r.turnSeat}`);
+
+// Rules §9 — play on for placement, then stop with one player left.
+await db.query(
+  "update public.ludo_games set state = jsonb_set(state, '{tokens,2,progress}', '[56,57,57,57]'::jsonb) where id = $1",
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", D, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+const seatsAfterFirstWin = await db.query(
+  "select seat, placement from public.ludo_seats where game_id = $1 order by seat",
+  [ludoId],
+);
+const placementOf = (seat) =>
+  seatsAfterFirstWin.rows.find((x) => x.seat === seat)?.placement ?? null;
+check("the first player out takes first place", placementOf(2) === 1, `seat2=${placementOf(2)}`);
+check("the game continues for the rest", snap.status === "playing" && snap.turnSeat === 0,
+  `status=${snap.status} turn=${snap.turnSeat}`);
+
+await db.query(
+  "update public.ludo_games set state = jsonb_set(state, '{tokens,0,progress}', '[56,57,57,57]'::jsonb) where id = $1",
+  [ludoId],
+);
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_roll($1, $2, 1) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+r = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_move($1, 0, $2) as s", [ludoId, snap.version]),
+  )).rows[0].s,
+);
+snap = r;
+check(
+  "the first player to finish wins the game",
+  snap.status === "finished" && snap.winnerSeat === 2,
+  `status=${snap.status} winner=${snap.winnerSeat}`,
+);
+const seatsFinal = await db.query(
+  "select seat, placement from public.ludo_seats where game_id = $1 order by seat",
+  [ludoId],
+);
+const finalPlacement = (seat) =>
+  seatsFinal.rows.find((x) => x.seat === seat)?.placement ?? null;
+check("every player is ranked", finalPlacement(2) === 1 && finalPlacement(0) === 2 && finalPlacement(1) === 3,
+  seatsFinal.rows.map((x) => `${x.seat}=${x.placement}`).join(","));
+await asRole("authenticated", C, () =>
+  expectError("a finished game accepts no further rolls",
+    "select public.ludo_roll($1, $2, 6)", [ludoId, snap.version]),
+);
+
+// Rules §10 — an overdue turn resolves itself, deterministically.
+const ludo2 = (
+  await asRole("authenticated", A, () =>
+    db.query("select public.ludo_create_game($1, 4, 60) as id", [FAM_A]),
+  )
+).rows[0].id;
+await asRole("authenticated", C, () =>
+  db.query("select public.ludo_join_game($1) as seat", [ludo2]),
+);
+const ludo2Start = j(
+  (await asRole("authenticated", A, () =>
+    db.query("select public.ludo_start_game($1) as s", [ludo2]),
+  )).rows[0].s,
+);
+check("a second game starts with two players",
+  ludo2Start.status === "playing" && ludo2Start.state.tokens.length === 2,
+  JSON.stringify({ status: ludo2Start.status, players: ludo2Start.state.tokens.length }));
+
+await db.query(
+  `update public.ludo_games
+      set phase = 'awaiting_move', dice = 1,
+          turn_deadline = now() - interval '1 second',
+          state = jsonb_set(state, '{tokens,0,progress}', '[5,-1,-1,-1]'::jsonb)
+    where id = $1`,
+  [ludo2],
+);
+const autoSnap = j(
+  (await asRole("authenticated", C, () =>
+    db.query("select public.ludo_auto_resolve($1) as s", [ludo2]),
+  )).rows[0].s,
+);
+check(
+  "an overdue turn is resolved automatically",
+  autoSnap.state.tokens[0].progress[0] === 6,
+  JSON.stringify(autoSnap.state.tokens[0].progress),
+);
+check(
+  "auto-play hands the turn on afterwards",
+  autoSnap.turnSeat === 1 && autoSnap.phase === "awaiting_roll",
+  `turn=${autoSnap.turnSeat} phase=${autoSnap.phase}`,
+);
+
+// An authenticated caller outside the family sees nothing.
+const ludoScope = await asRole("authenticated", B, () =>
+  db.query(
+    `select
+       (select count(*)::int from public.ludo_games) as games,
+       (select count(*)::int from public.ludo_seats) as seats,
+       (select count(*)::int from public.ludo_actions) as actions`,
+  ),
+);
+check(
+  "another family cannot see the board, seats or audit trail",
+  ludoScope.rows[0].games === 0 && ludoScope.rows[0].seats === 0 && ludoScope.rows[0].actions === 0,
+  JSON.stringify(ludoScope.rows[0]),
+);
+await asRole("anon", null, () =>
+  expectError("anonymous callers cannot create games",
+    "select public.ludo_create_game($1, 4, 60)", [FAM_A]),
+);
 
 // --- Report ------------------------------------------------------------------
 console.log("");
