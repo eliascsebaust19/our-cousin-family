@@ -1,0 +1,35 @@
+# Android
+/android/.gradle
+/android/.idea
+/android/captures
+/android/gradlew
+/android/gradlew.bat
+/android/local.properties
+/android/**/GeneratedPluginRegistrant.java
+/android/**/GeneratedPluginRegistrant.class
+/android/key.properties
+*.jks
+*.keystore
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+pubspec.lock
+*.iml
+.idea/
+.vscode/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
