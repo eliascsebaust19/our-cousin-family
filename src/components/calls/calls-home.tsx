@@ -112,21 +112,36 @@ export function CallsHome() {
             <CloudOff className="mt-0.5 size-4 shrink-0 text-amber-600" />
             <div className="space-y-1">
               <h1 className="text-sm font-medium">
-                {configured
-                  ? "The calls server is not reachable"
-                  : "LiveKit is not configured yet"}
+                {!configured
+                  ? "LiveKit is not configured yet"
+                  : serverError?.includes("member")
+                    ? "Family Access Notice"
+                    : "Call Service Notice"}
               </h1>
               <p className="text-xs text-muted-foreground">
-                {configured
-                  ? serverError
-                  : "The browser needs NEXT_PUBLIC_LIVEKIT_URL, and the server needs the API key and secret as Supabase secrets. Until then there is no room to join — and this page will not pretend otherwise."}
+                {!configured
+                  ? "LiveKit configuration is missing."
+                  : serverError}
               </p>
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Setup guide: docs/SETUP-LIVEKIT.md — it lists the three values and the
-            deploy command.
-          </p>
+          <div className="pt-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refresh(true)}
+              disabled={checking}
+              className="h-8 rounded-full text-xs"
+            >
+              {checking ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" /> Checking…
+                </>
+              ) : (
+                "Retry connection"
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     );

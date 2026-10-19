@@ -72,6 +72,11 @@ export function PostCard({
   const authorName =
     post.author?.nickname || post.author?.full_name || "Family member";
 
+  const sharedPost = Array.isArray(post.shared_post)
+    ? post.shared_post[0] ?? null
+    : post.shared_post ?? null;
+  const hasSharedPost = Boolean(sharedPost && typeof sharedPost === "object" && sharedPost.id);
+
   const summary = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of reactions) {
@@ -334,27 +339,27 @@ export function PostCard({
         </p>
       ) : null}
 
-      {post.shared_post ? (
+      {hasSharedPost && sharedPost ? (
         <div className="mt-3 rounded-2xl border border-border bg-muted/40 p-3">
           <div className="flex items-center gap-2">
             <UserAvatar
-              path={post.shared_post.author?.avatar_url ?? null}
-              name={post.shared_post.author?.full_name ?? "Member"}
+              path={sharedPost.author?.avatar_url ?? null}
+              name={sharedPost.author?.full_name ?? "Member"}
               size={28}
             />
             <span className="text-xs font-semibold">
-              {post.shared_post.author?.full_name ?? "Family member"}
+              {sharedPost.author?.full_name ?? "Family member"}
             </span>
             <time
               className="text-[11px] text-muted-foreground"
-              dateTime={post.shared_post.created_at}
+              dateTime={sharedPost.created_at}
             >
-              {timeAgo(post.shared_post.created_at)}
+              {timeAgo(sharedPost.created_at)}
             </time>
           </div>
-          {post.shared_post.content ? (
+          {sharedPost.content ? (
             <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-              {post.shared_post.content}
+              {sharedPost.content}
             </p>
           ) : null}
         </div>

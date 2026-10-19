@@ -201,6 +201,16 @@ export const eventResponseEnum = z.enum(["going", "maybe", "declined"]);
  * src/lib/datetime.ts), so they are just required ISO strings here. The
  * "end before start" rule is enforced in the database too.
  */
+export const eventCategoryEnum = z.enum([
+  "birthday",
+  "wedding",
+  "reunion",
+  "eid",
+  "anniversary",
+  "gathering",
+  "other",
+]);
+
 export const createEventSchema = z
   .object({
     title: z.string().trim().min(1, "Give the event a name").max(120),
@@ -209,6 +219,10 @@ export const createEventSchema = z
     all_day: z.boolean(),
     starts_at: z.string().min(1, "Pick when it starts"),
     ends_at: z.string().optional().or(z.literal("")),
+    category: eventCategoryEnum.default("gathering"),
+    cover_url: z.string().url().optional().or(z.literal("")),
+    is_recurring: z.boolean().default(false),
+    recurrence_rule: z.string().optional().or(z.literal("")),
   })
   .refine((d) => !d.ends_at || d.ends_at >= d.starts_at, {
     message: "The event must end after it starts",
@@ -287,3 +301,178 @@ export const callTokenRequestSchema = z.object({
   room: z.string().regex(/^(family|dm):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   canPublish: z.boolean().optional(),
 });
+
+// ----------------------------------------------------------------------------
+// 1. Family Tree Schemas
+// ----------------------------------------------------------------------------
+export const treeGenderEnum = z.enum(["male", "female", "other"]);
+export const treeRelTypeEnum = z.enum(["parent", "child", "spouse", "sibling"]);
+export const treeRelStatusEnum = z.enum(["approved", "suggested", "rejected"]);
+
+export const createTreeMemberSchema = z.object({
+  full_name: z.string().trim().min(1, "Name is required").max(100),
+  gender: treeGenderEnum.optional().nullable(),
+  birth_date: z.string().optional().nullable(),
+  death_date: z.string().optional().nullable(),
+  is_deceased: z.boolean().default(false),
+  bio: z.string().trim().max(1000).optional().nullable(),
+  avatar_url: z.string().url().optional().nullable().or(z.literal("")),
+  generation: z.number().int().default(0),
+  profile_id: uuidSchema.optional().nullable(),
+});
+
+export const updateTreeMemberSchema = createTreeMemberSchema.partial();
+
+export const createTreeRelationshipSchema = z
+  .object({
+    person_id: uuidSchema,
+    related_person_id: uuidSchema,
+    relationship_type: treeRelTypeEnum,
+    status: treeRelStatusEnum.default("approved"),
+  })
+  .refine((d) => d.person_id !== d.related_person_id, {
+    message: "Cannot relate a person to themselves",
+    path: ["related_person_id"],
+  });
+
+// ----------------------------------------------------------------------------
+// 2. Calendar Reminder Schemas
+// ----------------------------------------------------------------------------
+export const eventReminderTypeEnum = z.enum(["1_day_before", "1_hour_before", "on_day"]);
+
+export const createEventReminderSchema = z.object({
+  event_id: uuidSchema,
+  reminder_type: eventReminderTypeEnum.default("1_day_before"),
+});
+
+// ----------------------------------------------------------------------------
+// 3. Voice Memory Schemas
+// ----------------------------------------------------------------------------
+export const voiceLanguageEnum = z.enum(["bn", "en", "other"]);
+
+export const createVoiceMemorySchema = z.object({
+  title: z.string().trim().min(1, "Give the memory a title").max(150),
+  description: z.string().trim().max(2000).optional().or(z.literal("")),
+  speaker_name: z.string().trim().min(1, "Speaker name is required").max(80),
+  speaker_id: uuidSchema.optional().nullable(),
+  recorded_date: z.string().min(1, "Pick recorded date"),
+  language: voiceLanguageEnum.default("bn"),
+  tags: z.array(z.string().trim().max(30)).max(10).default([]),
+  audio_url: z.string().min(1, "Audio file is required"),
+  duration_seconds: z.number().int().nonnegative().default(0),
+  file_size_bytes: z.number().int().nonnegative().default(0),
+  cover_url: z.string().url().optional().or(z.literal("")),
+  transcript: z.string().trim().optional().or(z.literal("")),
+  transcript_status: z.enum(["none", "pending", "completed", "failed"]).default("none"),
+});
+
+export const updateTranscriptSchema = z.object({
+  id: uuidSchema,
+  transcript: z.string().trim().max(10000),
+  transcript_status: z.enum(["none", "pending", "completed", "failed"]).default("completed"),
+});
+
+// ----------------------------------------------------------------------------
+// 4. Reunion / Travel Schemas
+// ----------------------------------------------------------------------------
+export const reunionStatusEnum = z.enum(["planning", "confirmed", "completed", "cancelled"]);
+export const reunionParticipantStatusEnum = z.enum(["going", "interested", "declined"]);
+export const reunionTaskCategoryEnum = z.enum(["transport", "food", "lodging", "supplies", "activities", "general"]);
+export const reunionExpenseCategoryEnum = z.enum(["food", "transport", "lodging", "tickets", "activities", "other"]);
+
+export const reunionBaseSchema = z.object({
+  title: z.string().trim().min(1, "Enter a trip title").max(150),
+  description: z.string().trim().max(3000).optional().or(z.literal("")),
+  destination: z.string().trim().min(1, "Destination is required").max(200),
+  cover_url: z.string().url().optional().or(z.literal("")),
+  start_date: z.string().min(1, "Pick start date"),
+  end_date: z.string().optional().or(z.literal("")),
+  status: reunionStatusEnum.default("planning"),
+  estimated_budget: z.number().nonnegative().default(0),
+});
+
+export const createReunionSchema = reunionBaseSchema.refine(
+  (d) => !d.end_date || d.end_date >= d.start_date,
+  {
+    message: "Return date must be on or after start date",
+    path: ["end_date"],
+  },
+);
+
+export const updateReunionSchema = reunionBaseSchema.partial();
+
+export const updateReunionParticipantSchema = z.object({
+  reunion_id: uuidSchema,
+  status: reunionParticipantStatusEnum.default("going"),
+  adults_count: z.number().int().min(1, "At least 1 adult").max(50),
+  kids_count: z.number().int().min(0).max(50).default(0),
+  notes: z.string().trim().max(300).optional().or(z.literal("")),
+});
+
+export const createReunionItinerarySchema = z.object({
+  reunion_id: uuidSchema,
+  day_number: z.number().int().min(1),
+  activity_time: z.string().trim().max(30).optional().or(z.literal("")),
+  title: z.string().trim().min(1, "Activity title is required").max(120),
+  location: z.string().trim().max(150).optional().or(z.literal("")),
+  description: z.string().trim().max(1000).optional().or(z.literal("")),
+});
+
+export const createReunionTaskSchema = z.object({
+  reunion_id: uuidSchema,
+  title: z.string().trim().min(1, "Task title is required").max(150),
+  category: reunionTaskCategoryEnum.default("general"),
+  assigned_to: uuidSchema.optional().nullable(),
+  due_date: z.string().optional().nullable(),
+});
+
+export const createReunionExpenseSchema = z.object({
+  reunion_id: uuidSchema,
+  title: z.string().trim().min(1, "Title is required").max(120),
+  category: reunionExpenseCategoryEnum.default("other"),
+  estimated_amount: z.number().nonnegative().default(0),
+  actual_amount: z.number().nonnegative().default(0),
+  paid_by: uuidSchema.optional().nullable(),
+  payer_name: z.string().trim().max(80).optional().or(z.literal("")),
+  notes: z.string().trim().max(500).optional().or(z.literal("")),
+});
+
+// ----------------------------------------------------------------------------
+// 5. Family Fund & Shared Expenses (Record-keeping Only)
+// ----------------------------------------------------------------------------
+export const contributionStatusEnum = z.enum(["pledged", "received", "cancelled"]);
+export const paymentMethodEnum = z.enum(["cash", "bkash", "nagad", "bank_transfer", "other"]);
+export const fundExpenseCategoryEnum = z.enum(["food", "transport", "medical", "gifts", "events", "utilities", "other"]);
+export const fundExpenseStatusEnum = z.enum(["pending_review", "approved", "rejected"]);
+
+export const createFundSchema = z.object({
+  title: z.string().trim().min(1, "Fund name is required").max(120),
+  purpose: z.string().trim().max(2000).optional().or(z.literal("")),
+  target_amount: z.number().nonnegative().default(0),
+  deadline: z.string().optional().nullable(),
+  is_private: z.boolean().default(false),
+});
+
+export const createFundContributionSchema = z.object({
+  fund_id: uuidSchema,
+  contributor_name: z.string().trim().min(1, "Contributor name is required").max(80),
+  contributor_id: uuidSchema.optional().nullable(),
+  amount: z.number().positive("Amount must be greater than 0"),
+  status: contributionStatusEnum.default("pledged"),
+  payment_method: paymentMethodEnum.default("cash"),
+  notes: z.string().trim().max(500).optional().or(z.literal("")),
+});
+
+export const createFundExpenseSchema = z.object({
+  fund_id: uuidSchema.optional().nullable(),
+  title: z.string().trim().min(1, "Title is required").max(120),
+  category: fundExpenseCategoryEnum.default("other"),
+  amount: z.number().positive("Amount must be greater than 0"),
+  spent_at: z.string().min(1, "Date is required"),
+  payer_name: z.string().trim().min(1, "Payer name is required").max(80),
+  payer_id: uuidSchema.optional().nullable(),
+  receipt_url: z.string().url().optional().or(z.literal("")),
+  description: z.string().trim().max(1000).optional().or(z.literal("")),
+  status: fundExpenseStatusEnum.default("approved"),
+});
+

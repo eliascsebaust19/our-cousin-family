@@ -229,8 +229,21 @@ export function CallRoom({ room: roomSlug }: { room: string }) {
         if (disposed) return;
         await room.connect(token.url, token.token);
         if (disposed) return;
-        await room.localParticipant.setMicrophoneEnabled(true);
-        await room.localParticipant.setCameraEnabled(true);
+
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        } catch {
+          setMicEnabled(false);
+          toast.warning("Microphone access was blocked or not found. You can still listen.");
+        }
+
+        try {
+          await room.localParticipant.setCameraEnabled(true);
+        } catch {
+          setCameraEnabled(false);
+          toast.warning("Camera access was blocked or not found.");
+        }
+
         syncTiles();
       } catch (error) {
         if (disposed) return;
@@ -238,7 +251,7 @@ export function CallRoom({ room: roomSlug }: { room: string }) {
         setErrorMessage(
           error instanceof CallsError
             ? callsErrorMessage(error)
-            : "Could not connect to the call. Check that your browser is allowed to use the camera and microphone.",
+            : "Could not connect to the call. Check that your browser allows camera and microphone access.",
         );
       }
     })();

@@ -34,9 +34,9 @@ export function livekitUrl(): string | null {
 // Edge Function calls
 // ---------------------------------------------------------------------------
 
-function functionUrl(): string | null {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return base ? `${base}/functions/v1/livekit-token` : null;
+function functionUrl(): string {
+  // Use Next.js internal API route (/api/calls), which runs server-side with LIVEKIT_API_KEY/SECRET
+  return "/api/calls";
 }
 
 async function accessToken(): Promise<string> {
@@ -50,8 +50,6 @@ async function accessToken(): Promise<string> {
 
 async function callFunction<T>(path: string, init: RequestInit = {}): Promise<T> {
   const base = functionUrl();
-  if (!base) throw new CallsError("not_configured", 501, "missing_supabase_url");
-
   const token = await accessToken();
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token}`);
@@ -60,7 +58,7 @@ async function callFunction<T>(path: string, init: RequestInit = {}): Promise<T>
   try {
     response = await fetch(`${base}${path}`, { ...init, headers });
   } catch {
-    // Network-level failure: almost always "the function is not deployed".
+    // Network-level failure
     throw new CallsError("not_deployed", 0);
   }
 
@@ -72,7 +70,7 @@ async function callFunction<T>(path: string, init: RequestInit = {}): Promise<T>
       code = body.error ?? code;
       detail = body.detail ?? null;
     } catch {
-      // Non-JSON body (e.g. the platform's own 404 page).
+      // Non-JSON body
     }
     throw new CallsError(code, response.status, detail);
   }
@@ -93,8 +91,6 @@ export async function requestCallToken(
   room: string,
   canPublish = true,
 ): Promise<CallToken> {
-  // Client-side gate only: the function re-validates the room and then re-checks
-  // membership in the database. This just keeps malformed requests at home.
   const payload = callTokenRequestSchema.parse({ room, canPublish });
   return callFunction<CallToken>("?action=token", {
     method: "POST",
@@ -108,10 +104,12 @@ export function callsErrorMessage(error: unknown): string {
   if (!(error instanceof CallsError)) return "Something went wrong. Try again.";
   switch (error.code) {
     case "not_deployed":
-      return "The calls server function has not been deployed yet — see docs/SETUP-LIVEKIT.md.";
+      return "The calls server is not reachable. Check your connection.";
     case "calls_not_configured":
     case "not_configured":
-      return "LiveKit is not configured on the server yet — see docs/SETUP-LIVEKIT.md.";
+      return "LiveKit credentials (LIVEKIT_API_KEY / LIVEKIT_API_SECRET) are not configured on the server.";
+    case "permission_denied":
+      return "Microphone or camera permission was denied in your browser settings.";
     case "not_a_member":
       return "You are not a member of this family.";
     case "not_a_conversation_member":
@@ -119,7 +117,7 @@ export function callsErrorMessage(error: unknown): string {
     case "unknown_room":
       return "That call link is not valid.";
     case "call_ended":
-      return "That call has ended.";
+      return "The call has ended.";
     case "not_authenticated":
       return "Please sign in again.";
     default:

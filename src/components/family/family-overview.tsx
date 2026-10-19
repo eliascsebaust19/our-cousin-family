@@ -5,15 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
+  Coins,
+  Compass,
   Dices,
   DoorOpen,
   Info,
   Loader2,
+  Network,
   ScrollText,
   Settings2,
   Ticket,
   Users,
   Video,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -164,10 +168,38 @@ export function FamilyOverview() {
       show: isAdmin,
     },
     {
+      href: "/tree",
+      label: "Family Tree",
+      icon: Network,
+      hint: "Lineage & ancestors",
+      show: true,
+    },
+    {
       href: "/calendar",
       label: "Calendar",
       icon: CalendarDays,
       hint: "Birthdays & events",
+      show: true,
+    },
+    {
+      href: "/voice-memories",
+      label: "Voice Memories",
+      icon: Volume2,
+      hint: "Stories in their voice",
+      show: true,
+    },
+    {
+      href: "/reunions",
+      label: "Trips & Reunions",
+      icon: Compass,
+      hint: "Schedules, RSVP & costs",
+      show: true,
+    },
+    {
+      href: "/fund",
+      label: "Family Fund",
+      icon: Coins,
+      hint: "Shared expenses ledger",
       show: true,
     },
     {

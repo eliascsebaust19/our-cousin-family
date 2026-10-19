@@ -23,25 +23,34 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  const [profileRes, membershipRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select(
-        "id, full_name, nickname, username, avatar_url, bio, birthday, relationship, show_birthday, show_online_status, last_seen_at",
-      )
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("family_members")
-      .select(
-        "role, status, families!inner(id, name, description, rules, avatar_url, cover_url, privacy, require_approval, created_by)",
-      )
-      .eq("user_id", user.id)
-      .order("joined_at", { ascending: true }),
-  ]);
+  let profileData: ProfileLite | null = null;
+  let membershipData: unknown[] = [];
+
+  try {
+    const [profileRes, membershipRes] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select(
+          "id, full_name, nickname, username, avatar_url, bio, birthday, relationship, show_birthday, show_online_status, last_seen_at",
+        )
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("family_members")
+        .select(
+          "role, status, families!inner(id, name, description, rules, avatar_url, cover_url, privacy, require_approval, created_by)",
+        )
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: true }),
+    ]);
+    profileData = (profileRes.data as ProfileLite | null) ?? null;
+    membershipData = membershipRes.data ?? [];
+  } catch (err) {
+    console.error("AppLayout data fetch error:", err);
+  }
 
   const profile: ProfileLite =
-    (profileRes.data as ProfileLite | null) ?? {
+    profileData ?? {
       id: user.id,
       full_name:
         (user.user_metadata?.full_name as string | undefined) ??
@@ -59,7 +68,7 @@ export default async function AppLayout({
     };
 
   const memberships: Membership[] = (
-    (membershipRes.data ?? []) as unknown as MembershipQueryRow[]
+    (membershipData ?? []) as unknown as MembershipQueryRow[]
   )
     .filter((row) => row.families !== null)
     .map((row) => ({

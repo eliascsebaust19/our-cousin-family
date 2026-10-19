@@ -618,6 +618,10 @@ export interface Database {
           starts_at: string;
           ends_at: string | null;
           all_day: boolean;
+          category: string;
+          cover_url: string | null;
+          is_recurring: boolean;
+          recurrence_rule: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -631,6 +635,10 @@ export interface Database {
           starts_at: string;
           ends_at?: string | null;
           all_day?: boolean;
+          category?: string;
+          cover_url?: string | null;
+          is_recurring?: boolean;
+          recurrence_rule?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -641,6 +649,10 @@ export interface Database {
           starts_at?: string;
           ends_at?: string | null;
           all_day?: boolean;
+          category?: string;
+          cover_url?: string | null;
+          is_recurring?: boolean;
+          recurrence_rule?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -974,6 +986,609 @@ export interface Database {
           },
         ];
       };
+      event_reminders: {
+        Row: {
+          id: string;
+          event_id: string;
+          user_id: string;
+          reminder_type: string;
+          is_sent: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id: string;
+          user_id: string;
+          reminder_type?: string;
+          is_sent?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          reminder_type?: string;
+          is_sent?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "event_reminders_event_id_fkey";
+            columns: ["event_id"];
+            referencedRelation: "family_events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_reminders_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      family_tree_members: {
+        Row: {
+          id: string;
+          family_id: string;
+          profile_id: string | null;
+          full_name: string;
+          gender: string | null;
+          birth_date: string | null;
+          death_date: string | null;
+          is_deceased: boolean;
+          bio: string | null;
+          avatar_url: string | null;
+          generation: number;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          profile_id?: string | null;
+          full_name: string;
+          gender?: string | null;
+          birth_date?: string | null;
+          death_date?: string | null;
+          is_deceased?: boolean;
+          bio?: string | null;
+          avatar_url?: string | null;
+          generation?: number;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          profile_id?: string | null;
+          full_name?: string;
+          gender?: string | null;
+          birth_date?: string | null;
+          death_date?: string | null;
+          is_deceased?: boolean;
+          bio?: string | null;
+          avatar_url?: string | null;
+          generation?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_tree_members_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      family_tree_relationships: {
+        Row: {
+          id: string;
+          family_id: string;
+          person_id: string;
+          related_person_id: string;
+          relationship_type: string;
+          status: string;
+          created_by: string;
+          approved_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          person_id: string;
+          related_person_id: string;
+          relationship_type: string;
+          status?: string;
+          created_by: string;
+          approved_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          relationship_type?: string;
+          status?: string;
+          approved_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_tree_relationships_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      voice_memories: {
+        Row: {
+          id: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description: string | null;
+          speaker_name: string;
+          speaker_id: string | null;
+          recorded_date: string;
+          language: string;
+          tags: string[];
+          audio_url: string;
+          duration_seconds: number;
+          file_size_bytes: number;
+          cover_url: string | null;
+          transcript: string | null;
+          transcript_status: string;
+          transcript_updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description?: string | null;
+          speaker_name: string;
+          speaker_id?: string | null;
+          recorded_date?: string;
+          language?: string;
+          tags?: string[];
+          audio_url: string;
+          duration_seconds?: number;
+          file_size_bytes?: number;
+          cover_url?: string | null;
+          transcript?: string | null;
+          transcript_status?: string;
+          transcript_updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          speaker_name?: string;
+          speaker_id?: string | null;
+          recorded_date?: string;
+          language?: string;
+          tags?: string[];
+          audio_url?: string;
+          duration_seconds?: number;
+          file_size_bytes?: number;
+          cover_url?: string | null;
+          transcript?: string | null;
+          transcript_status?: string;
+          transcript_updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "voice_memories_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reunion_plans: {
+        Row: {
+          id: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description: string | null;
+          destination: string;
+          cover_url: string | null;
+          start_date: string;
+          end_date: string | null;
+          status: string;
+          estimated_budget: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          description?: string | null;
+          destination: string;
+          cover_url?: string | null;
+          start_date: string;
+          end_date?: string | null;
+          status?: string;
+          estimated_budget?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          destination?: string;
+          cover_url?: string | null;
+          start_date?: string;
+          end_date?: string | null;
+          status?: string;
+          estimated_budget?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reunion_plans_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reunion_participants: {
+        Row: {
+          id: string;
+          reunion_id: string;
+          user_id: string;
+          status: string;
+          adults_count: number;
+          kids_count: number;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          reunion_id: string;
+          user_id: string;
+          status?: string;
+          adults_count?: number;
+          kids_count?: number;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          adults_count?: number;
+          kids_count?: number;
+          notes?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reunion_participants_reunion_id_fkey";
+            columns: ["reunion_id"];
+            referencedRelation: "reunion_plans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reunion_itinerary: {
+        Row: {
+          id: string;
+          reunion_id: string;
+          day_number: number;
+          activity_time: string | null;
+          title: string;
+          location: string | null;
+          description: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reunion_id: string;
+          day_number?: number;
+          activity_time?: string | null;
+          title: string;
+          location?: string | null;
+          description?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          day_number?: number;
+          activity_time?: string | null;
+          title?: string;
+          location?: string | null;
+          description?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reunion_itinerary_reunion_id_fkey";
+            columns: ["reunion_id"];
+            referencedRelation: "reunion_plans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reunion_tasks: {
+        Row: {
+          id: string;
+          reunion_id: string;
+          title: string;
+          category: string;
+          assigned_to: string | null;
+          due_date: string | null;
+          is_completed: boolean;
+          completed_by: string | null;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reunion_id: string;
+          title: string;
+          category?: string;
+          assigned_to?: string | null;
+          due_date?: string | null;
+          is_completed?: boolean;
+          completed_by?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          title?: string;
+          category?: string;
+          assigned_to?: string | null;
+          due_date?: string | null;
+          is_completed?: boolean;
+          completed_by?: string | null;
+          completed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reunion_tasks_reunion_id_fkey";
+            columns: ["reunion_id"];
+            referencedRelation: "reunion_plans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reunion_expenses: {
+        Row: {
+          id: string;
+          reunion_id: string;
+          title: string;
+          category: string;
+          estimated_amount: number;
+          actual_amount: number;
+          paid_by: string | null;
+          payer_name: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reunion_id: string;
+          title: string;
+          category?: string;
+          estimated_amount?: number;
+          actual_amount?: number;
+          paid_by?: string | null;
+          payer_name?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          title?: string;
+          category?: string;
+          estimated_amount?: number;
+          actual_amount?: number;
+          paid_by?: string | null;
+          payer_name?: string | null;
+          notes?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reunion_expenses_reunion_id_fkey";
+            columns: ["reunion_id"];
+            referencedRelation: "reunion_plans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      family_funds: {
+        Row: {
+          id: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          purpose: string | null;
+          target_amount: number;
+          deadline: string | null;
+          is_closed: boolean;
+          is_private: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          created_by: string;
+          title: string;
+          purpose?: string | null;
+          target_amount?: number;
+          deadline?: string | null;
+          is_closed?: boolean;
+          is_private?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          purpose?: string | null;
+          target_amount?: number;
+          deadline?: string | null;
+          is_closed?: boolean;
+          is_private?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_funds_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      fund_contributions: {
+        Row: {
+          id: string;
+          fund_id: string;
+          family_id: string;
+          contributor_name: string;
+          contributor_id: string | null;
+          amount: number;
+          status: string;
+          payment_method: string;
+          notes: string | null;
+          received_at: string | null;
+          confirmed_by: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          fund_id: string;
+          family_id: string;
+          contributor_name: string;
+          contributor_id?: string | null;
+          amount: number;
+          status?: string;
+          payment_method?: string;
+          notes?: string | null;
+          received_at?: string | null;
+          confirmed_by?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          contributor_name?: string;
+          contributor_id?: string | null;
+          amount?: number;
+          status?: string;
+          payment_method?: string;
+          notes?: string | null;
+          received_at?: string | null;
+          confirmed_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "fund_contributions_fund_id_fkey";
+            columns: ["fund_id"];
+            referencedRelation: "family_funds";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      fund_expenses: {
+        Row: {
+          id: string;
+          family_id: string;
+          fund_id: string | null;
+          title: string;
+          category: string;
+          amount: number;
+          spent_at: string;
+          payer_name: string;
+          payer_id: string | null;
+          receipt_url: string | null;
+          description: string | null;
+          status: string;
+          approved_by: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          fund_id?: string | null;
+          title: string;
+          category?: string;
+          amount: number;
+          spent_at?: string;
+          payer_name: string;
+          payer_id?: string | null;
+          receipt_url?: string | null;
+          description?: string | null;
+          status?: string;
+          approved_by?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          fund_id?: string | null;
+          title?: string;
+          category?: string;
+          amount?: number;
+          spent_at?: string;
+          payer_name?: string;
+          payer_id?: string | null;
+          receipt_url?: string | null;
+          description?: string | null;
+          status?: string;
+          approved_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "fund_expenses_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      financial_audit_logs: {
+        Row: {
+          id: string;
+          family_id: string;
+          actor_id: string;
+          action: string;
+          target_type: string;
+          target_id: string;
+          details: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          actor_id: string;
+          action: string;
+          target_type: string;
+          target_id: string;
+          details?: Json;
+          created_at?: string;
+        };
+        Update: {
+          details?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "financial_audit_logs_family_id_fkey";
+            columns: ["family_id"];
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1096,8 +1711,32 @@ export interface Database {
         Args: { p_game_id: string };
         Returns: Json;
       };
+      ludo_set_autoplay: {
+        Args: { p_game_id: string; p_autoplay: boolean };
+        Returns: undefined;
+      };
+      ludo_delete_game: {
+        Args: { p_game_id: string };
+        Returns: boolean;
+      };
+      ludo_leave_game: {
+        Args: { p_game_id: string };
+        Returns: boolean;
+      };
       vault_item_family_id: {
         Args: { p_item_id: string };
+        Returns: string;
+      };
+      check_tree_no_cycle: {
+        Args: { p_parent_id: string; p_child_id: string };
+        Returns: boolean;
+      };
+      reunion_family_id: {
+        Args: { p_reunion_id: string };
+        Returns: string;
+      };
+      fund_family_id: {
+        Args: { p_fund_id: string };
         Returns: string;
       };
     };

@@ -58,7 +58,10 @@ export function EventFormDialog({
   onSaved: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<string>("gathering");
   const [allDay, setAllDay] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [coverUrl, setCoverUrl] = useState("");
   const [startDate, setStartDate] = useState(defaultDayKey);
   const [startTime, setStartTime] = useState(nowTime());
   const [endDate, setEndDate] = useState("");
@@ -73,7 +76,10 @@ export function EventFormDialog({
     if (!open) return;
     setErrors({});
     setTitle(event?.title ?? "");
+    setCategory(event?.category ?? "gathering");
     setAllDay(event?.all_day ?? false);
+    setIsRecurring(event?.is_recurring ?? false);
+    setCoverUrl(event?.cover_url ?? "");
     setLocation(event?.location ?? "");
     setDescription(event?.description ?? "");
 
@@ -94,6 +100,9 @@ export function EventFormDialog({
       return;
     }
 
+    setCategory("gathering");
+    setIsRecurring(false);
+    setCoverUrl("");
     setStartDate(defaultDayKey);
     setStartTime(nowTime());
     setEndDate("");
@@ -147,6 +156,10 @@ export function EventFormDialog({
       description: parsed.data.description ? parsed.data.description : null,
       location: parsed.data.location ? parsed.data.location : null,
       all_day: parsed.data.all_day,
+      category: category as any,
+      cover_url: coverUrl ? coverUrl : null,
+      is_recurring: isRecurring,
+      recurrence_rule: isRecurring ? "yearly" : null,
       starts_at: parsed.data.starts_at,
       ends_at: parsed.data.ends_at ? parsed.data.ends_at : null,
     };
@@ -198,6 +211,39 @@ export function EventFormDialog({
               autoComplete="off"
             />
           </Field>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="event-category" className="text-sm">
+                Category
+              </Label>
+              <select
+                id="event-category"
+                className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="gathering">Gathering / Get-together</option>
+                <option value="birthday">Birthday 🎂</option>
+                <option value="wedding">Wedding 💍</option>
+                <option value="eid">Eid Reunion 🌙</option>
+                <option value="anniversary">Anniversary 🎉</option>
+                <option value="reunion">Family Tour / Trip 🏖️</option>
+                <option value="other">Other Occasion</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 mt-auto h-10">
+              <Label htmlFor="event-recurring" className="text-xs font-medium cursor-pointer">
+                Repeat Every Year
+              </Label>
+              <Switch
+                id="event-recurring"
+                checked={isRecurring}
+                onCheckedChange={setIsRecurring}
+              />
+            </div>
+          </div>
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2.5">
             <Label htmlFor="event-all-day" className="text-sm">

@@ -20,6 +20,7 @@ import {
 } from "@/lib/ludo";
 import type { LudoSnapshot } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { LudoSquareBoard } from "./ludo-square-board";
 
 type LudoBoardProps = {
   snapshot: LudoSnapshot;
@@ -41,8 +42,9 @@ type PlacedToken = {
 };
 
 /**
- * Renders the ring board for 4, 6 or 8 seats. Everything drawn here comes from
- * the server's snapshot; the component never infers rules.
+ * Renders the Ludo board:
+ * - When 4 seats: authentic square board matching the classic traditional 15x15 layout
+ * - When 6 or 8 seats: regular circular ring board
  */
 export function LudoBoard({
   snapshot,
@@ -51,6 +53,18 @@ export function LudoBoard({
   onPickToken,
   busy = false,
 }: LudoBoardProps) {
+  if (snapshot.boardSeats === 4) {
+    return (
+      <LudoSquareBoard
+        snapshot={snapshot}
+        selectable={selectable}
+        mySeat={mySeat}
+        onPickToken={onPickToken}
+        busy={busy}
+      />
+    );
+  }
+
   const seats = snapshot.boardSeats;
   const radius = ludoTokenRadius(seats);
   const perPlayer = ludoTokensPerPlayer(seats);

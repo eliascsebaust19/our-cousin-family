@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarClock, Loader2, MapPin, Pencil, Trash2 } from "lucide-react";
+import { Bell, CalendarClock, Loader2, MapPin, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { formatEventWhen } from "@/lib/datetime";
@@ -54,13 +54,55 @@ export function EventDetailsDialog({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reminder, setReminder] = useState<string>("none");
+  const [reminderPending, setReminderPending] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setResponse(mine?.response ?? null);
     setNote(mine?.note ?? "");
     setConfirmDelete(false);
-  }, [open, mine?.response, mine?.note]);
+
+    // Fetch user's reminder for this event
+    const supabase = createClient();
+    supabase
+      .from("event_reminders")
+      .select("reminder_type")
+      .eq("event_id", event.id)
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setReminder(data?.reminder_type ?? "none");
+      });
+  }, [open, mine?.response, mine?.note, event.id, userId]);
+
+  async function handleReminderChange(type: string) {
+    setReminderPending(true);
+    const supabase = createClient();
+    if (type === "none") {
+      await supabase
+        .from("event_reminders")
+        .delete()
+        .eq("event_id", event.id)
+        .eq("user_id", userId);
+      setReminder("none");
+      toast.success("Reminder turned off");
+    } else {
+      const { error } = await supabase.from("event_reminders").upsert(
+        {
+          event_id: event.id,
+          user_id: userId,
+          reminder_type: type,
+        },
+        { onConflict: "event_id,user_id,reminder_type" },
+      );
+      if (!error) {
+        setReminder(type);
+        toast.success("Reminder set!");
+      }
+    }
+    setReminderPending(false);
+  }
 
   const { going, maybe, declined } = counts(event);
 
@@ -118,7 +160,19 @@ export function EventDetailsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="pr-6">{event.title}</DialogTitle>
+          <div className="flex flex-wrap items-center gap-2 pr-6">
+            <DialogTitle>{event.title}</DialogTitle>
+            {event.category && (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
+                {event.category}
+              </span>
+            )}
+            {event.is_recurring && (
+              <span className="rounded-full bg-brand-warm/10 px-2 py-0.5 text-[10px] font-semibold text-brand-warm">
+                Repeats Yearly
+              </span>
+            )}
+          </div>
           <DialogDescription>
             Organised by {event.author?.full_name ?? "a relative"}
           </DialogDescription>
@@ -142,6 +196,27 @@ export function EventDetailsDialog({
               </p>
             ) : null}
           </div>
+
+          {/* Reminder Section */}
+          <section className="rounded-xl border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold">
+                <Bell className="h-3.5 w-3.5 text-primary" />
+                <span>In-App Reminder</span>
+              </div>
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                value={reminder}
+                disabled={reminderPending}
+                onChange={(e) => void handleReminderChange(e.target.value)}
+              >
+                <option value="none">No reminder</option>
+                <option value="1_day_before">1 day before</option>
+                <option value="1_hour_before">1 hour before</option>
+                <option value="on_day">On the day</option>
+              </select>
+            </div>
+          </section>
 
           <section aria-labelledby="event-going" className="space-y-2">
             <div className="flex items-baseline justify-between">

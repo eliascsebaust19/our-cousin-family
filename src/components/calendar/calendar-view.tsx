@@ -39,6 +39,7 @@ export function CalendarView() {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
   const [selectedKey, setSelectedKey] = useState(() => todayKey());
+  const [viewTab, setViewTab] = useState<"month" | "week" | "upcoming">("month");
   const [formOpen, setFormOpen] = useState<{ open: boolean; event: CalendarEvent | null }>({
     open: false,
     event: null,
@@ -57,20 +58,69 @@ export function CalendarView() {
     const from = startOfMonth(addMonths(visibleMonth, -WINDOW_MONTHS));
     const to = startOfMonth(addMonths(visibleMonth, WINDOW_MONTHS + 1));
 
-    const { data, error } = await supabase
-      .from("family_events")
-      .select(CALENDAR_SELECT)
-      .eq("family_id", familyId)
-      .gte("starts_at", from.toISOString())
-      .lt("starts_at", to.toISOString())
-      .order("starts_at", { ascending: true })
-      .limit(400);
+    const [eventsRes, membersRes] = await Promise.all([
+      supabase
+        .from("family_events")
+        .select(CALENDAR_SELECT)
+        .eq("family_id", familyId)
+        .gte("starts_at", from.toISOString())
+        .lt("starts_at", to.toISOString())
+        .order("starts_at", { ascending: true })
+        .limit(400),
+      supabase
+        .from("family_members")
+        .select("user_id, profiles!family_members_user_id_fkey(id, full_name, avatar_url, birthday, show_birthday)")
+        .eq("family_id", familyId)
+        .eq("status", "active"),
+    ]);
 
-    if (error) {
+    if (eventsRes.error) {
       toast.error("Could not load the family calendar");
       return;
     }
-    setEvents((data ?? []) as unknown as CalendarEvent[]);
+
+    const fetchedEvents = (eventsRes.data ?? []) as unknown as CalendarEvent[];
+
+    // Generate birthday pseudo-events for all active members with visible birthdays
+    const birthdayEvents: CalendarEvent[] = [];
+    const visibleYear = visibleMonth.getFullYear();
+    const candidateYears = [visibleYear - 1, visibleYear, visibleYear + 1];
+
+    if (membersRes.data) {
+      for (const m of membersRes.data as any[]) {
+        const prof = m.profiles;
+        if (!prof || !prof.birthday || prof.show_birthday === false) continue;
+        const bdayStr = prof.birthday; // "YYYY-MM-DD"
+        const parts = bdayStr.split("-");
+        if (parts.length === 3) {
+          const mm = parts[1];
+          const dd = parts[2];
+          for (const yr of candidateYears) {
+            const dateIso = `${yr}-${mm}-${dd}T00:00:00.000Z`;
+            birthdayEvents.push({
+              id: `birthday-${prof.id}-${yr}`,
+              family_id: familyId,
+              created_by: prof.id,
+              title: `${prof.full_name}'s Birthday 🎂`,
+              description: `Celebrate with ${prof.full_name}!`,
+              location: null,
+              starts_at: dateIso,
+              ends_at: null,
+              all_day: true,
+              category: "birthday",
+              cover_url: null,
+              is_recurring: true,
+              recurrence_rule: "yearly",
+              created_at: dateIso,
+              author: prof,
+              rsvps: [],
+            });
+          }
+        }
+      }
+    }
+
+    setEvents([...fetchedEvents, ...birthdayEvents]);
   }, [familyId, visibleMonth]);
 
   useEffect(() => {
@@ -136,6 +186,25 @@ export function CalendarView() {
   }, [events]);
 
   const dayEvents = byDay.get(selectedKey) ?? [];
+
+  const weekDays = useMemo(() => {
+    const sel = fromDateKey(selectedKey);
+    const dayOfWeek = sel.getDay(); // 0 is Sunday
+    const start = new Date(sel);
+    start.setDate(sel.getDate() - dayOfWeek);
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return localDateKey(d);
+    });
+  }, [selectedKey]);
+
+  const allUpcoming = useMemo(() => {
+    const today = todayKey();
+    return (events ?? [])
+      .filter((ev) => eventDateKey(ev) >= today)
+      .sort((a, b) => eventDateKey(a).localeCompare(eventDateKey(b)));
+  }, [events]);
 
   const alsoUpcoming = useMemo(() => {
     const today = todayKey();
@@ -228,199 +297,387 @@ export function CalendarView() {
         </Button>
       </div>
 
-      {/* Month navigation */}
+      {/* View Switcher Tabs */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Previous month"
-            onClick={() => goToMonth(-1)}
+        <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setViewTab("month")}
+            className={`rounded-md px-3 py-1 font-medium transition ${
+              viewTab === "month"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <ChevronLeft aria-hidden />
-          </Button>
-          <h2 className="min-w-0 truncate font-display text-base font-semibold">
-            {monthLabel(visibleMonth)}
-          </h2>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Next month"
-            onClick={() => goToMonth(1)}
+            Month
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewTab("week")}
+            className={`rounded-md px-3 py-1 font-medium transition ${
+              viewTab === "week"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <ChevronRight aria-hidden />
-          </Button>
+            Week
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewTab("upcoming")}
+            className={`rounded-md px-3 py-1 font-medium transition ${
+              viewTab === "upcoming"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Upcoming
+          </button>
         </div>
-        <Button variant="outline" size="sm" className="h-9" onClick={goToToday}>
-          Today
-        </Button>
       </div>
 
-      {/* Month grid */}
-      <div className="rounded-2xl border border-border bg-card p-2">
-        <div className="grid grid-cols-7 gap-1">
-          {WEEKDAY_LABELS.map((label, index) => (
-            <div
-              key={`${label}-${index}`}
-              className="py-1 text-center text-[11px] font-medium text-muted-foreground"
-              aria-hidden
-            >
-              {label}
-            </div>
-          ))}
-
-          {weeks.flat().map((key) => {
-            const count = byDay.get(key)?.length ?? 0;
-            const dayNumber = Number(key.slice(8));
-            const isToday = key === todayKey();
-            const isSelected = key === selectedKey;
-            const outside = !isSameMonth(fromDateKey(key), visibleMonth);
-
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => selectDay(key)}
-                aria-current={isSelected ? "date" : undefined}
-                aria-label={`${localDateKey(fromDateKey(key))}${count ? `, ${count} event${count === 1 ? "" : "s"}` : ""}`}
-                className={cn(
-                  "flex min-h-12 flex-col items-center justify-start rounded-xl border py-1.5 text-sm transition",
-                  outside ? "text-muted-foreground/50" : "text-foreground",
-                  isToday && !isSelected ? "border-primary/50 font-semibold" : "border-transparent",
-                  isSelected
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "hover:bg-accent focus-visible:bg-accent",
-                )}
+      {/* MONTH VIEW */}
+      {viewTab === "month" && (
+        <>
+          {/* Month navigation */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => goToMonth(-1)}
               >
-                <span className="leading-none">{dayNumber}</span>
-                <span className="mt-1 flex h-1.5 items-center gap-0.5">
-                  {count > 0
-                    ? Array.from({ length: Math.min(count, 3) }).map((_, dot) => (
-                        <span
-                          key={dot}
-                          className={cn(
-                            "size-1 rounded-full",
-                            isSelected ? "bg-primary-foreground" : "bg-primary",
-                          )}
-                        />
-                      ))
-                    : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Selected day */}
-      <section aria-labelledby="selected-day" className="space-y-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 id="selected-day" className="font-display text-base font-semibold">
-            {dayHeading(selectedKey)}
-          </h2>
-          {dayEvents.length > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {dayEvents.length} event{dayEvents.length === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </div>
-
-        {dayEvents.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 text-center">
-            <p className="text-sm text-muted-foreground">Nothing planned for this day.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => setFormOpen({ open: true, event: null })}
-            >
-              <Plus aria-hidden />
-              Add something
+                <ChevronLeft aria-hidden />
+              </Button>
+              <h2 className="min-w-0 truncate font-display text-base font-semibold">
+                {monthLabel(visibleMonth)}
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next month"
+                onClick={() => goToMonth(1)}
+              >
+                <ChevronRight aria-hidden />
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" className="h-9" onClick={goToToday}>
+              Today
             </Button>
           </div>
-        ) : (
-          <ul className="space-y-2">
-            {dayEvents.map((event) => {
-              const mine = event.rsvps.find((rsvp) => rsvp.user_id === userId);
-              const going = event.rsvps.filter((rsvp) => rsvp.response === "going").length;
-              const eventDay = fromDateKey(eventDateKey(event));
 
-              return (
-                <li key={event.id}>
+          {/* Month grid */}
+          <div className="rounded-2xl border border-border bg-card p-2">
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAY_LABELS.map((label, index) => (
+                <div
+                  key={`${label}-${index}`}
+                  className="py-1 text-center text-[11px] font-medium text-muted-foreground"
+                  aria-hidden
+                >
+                  {label}
+                </div>
+              ))}
+
+              {weeks.flat().map((key) => {
+                const count = byDay.get(key)?.length ?? 0;
+                const dayNumber = Number(key.slice(8));
+                const isToday = key === todayKey();
+                const isSelected = key === selectedKey;
+                const outside = !isSameMonth(fromDateKey(key), visibleMonth);
+
+                return (
                   <button
+                    key={key}
                     type="button"
-                    onClick={() => setDetailsId(event.id)}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/30"
+                    onClick={() => selectDay(key)}
+                    aria-current={isSelected ? "date" : undefined}
+                    aria-label={`${localDateKey(fromDateKey(key))}${count ? `, ${count} event${count === 1 ? "" : "s"}` : ""}`}
+                    className={cn(
+                      "flex min-h-12 flex-col items-center justify-start rounded-xl border py-1.5 text-sm transition",
+                      outside ? "text-muted-foreground/50" : "text-foreground",
+                      isToday && !isSelected ? "border-primary/50 font-semibold" : "border-transparent",
+                      isSelected
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "hover:bg-accent focus-visible:bg-accent",
+                    )}
                   >
-                    <span
-                      className="flex size-10 shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary"
-                      aria-hidden
-                    >
-                      <span className="text-[10px] font-semibold uppercase leading-none">
-                        {eventDay.toLocaleDateString(undefined, { month: "short", timeZone: event.all_day ? "UTC" : undefined })}
-                      </span>
-                      <span className="text-sm font-bold leading-tight">
-                        {eventDay.getUTCDate()}
-                      </span>
+                    <span className="leading-none">{dayNumber}</span>
+                    <span className="mt-1 flex h-1.5 items-center gap-0.5">
+                      {count > 0
+                        ? Array.from({ length: Math.min(count, 3) }).map((_, dot) => (
+                            <span
+                              key={dot}
+                              className={cn(
+                                "size-1 rounded-full",
+                                isSelected ? "bg-primary-foreground" : "bg-primary",
+                              )}
+                            />
+                          ))
+                        : null}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{event.title}</span>
-                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                        {formatEventTime(event)}
-                        {event.location ? ` · ${event.location}` : ""}
-                      </span>
-                    </span>
-                    {mine ? (
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                          mine.response === "going"
-                            ? "bg-primary/15 text-primary"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {mine.response === "going" ? "You're going" : mine.response}
-                      </span>
-                    ) : going > 0 ? (
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {going} going
-                      </span>
-                    ) : null}
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   </button>
-                </li>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selected day */}
+          <section aria-labelledby="selected-day" className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 id="selected-day" className="font-display text-base font-semibold">
+                {dayHeading(selectedKey)}
+              </h2>
+              {dayEvents.length > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {dayEvents.length} event{dayEvents.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </div>
+
+            {dayEvents.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 text-center">
+                <p className="text-sm text-muted-foreground">Nothing planned for this day.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setFormOpen({ open: true, event: null })}
+                >
+                  <Plus aria-hidden />
+                  Add something
+                </Button>
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {dayEvents.map((event) => {
+                  const mine = event.rsvps.find((rsvp) => rsvp.user_id === userId);
+                  const going = event.rsvps.filter((rsvp) => rsvp.response === "going").length;
+                  const eventDay = fromDateKey(eventDateKey(event));
+
+                  return (
+                    <li key={event.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (event.id.startsWith("birthday-")) {
+                            toast.info(event.title);
+                          } else {
+                            setDetailsId(event.id);
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/30"
+                      >
+                        <span
+                          className="flex size-10 shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary"
+                          aria-hidden
+                        >
+                          <span className="text-[10px] font-semibold uppercase leading-none">
+                            {eventDay.toLocaleDateString(undefined, { month: "short", timeZone: event.all_day ? "UTC" : undefined })}
+                          </span>
+                          <span className="text-sm font-bold leading-tight">
+                            {eventDay.getUTCDate()}
+                          </span>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{event.title}</span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {formatEventTime(event)}
+                            {event.location ? ` · ${event.location}` : ""}
+                          </span>
+                        </span>
+                        {mine ? (
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              mine.response === "going"
+                                ? "bg-primary/15 text-primary"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {mine.response === "going" ? "You're going" : mine.response}
+                          </span>
+                        ) : going > 0 ? (
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {going} going
+                          </span>
+                        ) : null}
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {alsoUpcoming.length > 0 ? (
+            <section aria-labelledby="also-upcoming" className="space-y-2">
+              <h2 id="also-upcoming" className="font-display text-base font-semibold">
+                Also upcoming
+              </h2>
+              <ul className="space-y-2">
+                {alsoUpcoming.map((event) => (
+                  <li key={event.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (event.id.startsWith("birthday-")) {
+                          toast.info(event.title);
+                        } else {
+                          setDetailsId(event.id);
+                        }
+                      }}
+                      className="flex w-full items-between gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/30"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{event.title}</span>
+                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                          {dayHeading(eventDateKey(event))} · {formatEventTime(event)}
+                        </span>
+                      </span>
+                      <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
+      )}
+
+      {/* WEEK VIEW */}
+      {viewTab === "week" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm font-semibold text-muted-foreground">
+              Week of {fromDateKey(weekDays[0]!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </h2>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={goToToday}>
+              This Week
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {weekDays.map((dayKey) => {
+              const dEvents = byDay.get(dayKey) ?? [];
+              const isToday = dayKey === todayKey();
+              return (
+                <div
+                  key={dayKey}
+                  className={`rounded-2xl border p-3 ${
+                    isToday ? "border-primary/50 bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-1.5 border-b border-border/50 mb-2">
+                    <span className="font-display text-xs font-bold">
+                      {dayHeading(dayKey)} {isToday && "· Today"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {dEvents.length} {dEvents.length === 1 ? "item" : "items"}
+                    </span>
+                  </div>
+
+                  {dEvents.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic py-1">No events</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {dEvents.map((ev) => (
+                        <li
+                          key={ev.id}
+                          onClick={() => {
+                            if (ev.id.startsWith("birthday-")) {
+                              toast.info(ev.title);
+                            } else {
+                              setDetailsId(ev.id);
+                            }
+                          }}
+                          className="flex items-center justify-between gap-2 p-2 rounded-xl bg-background border border-border/60 cursor-pointer hover:border-primary/40 transition"
+                        >
+                          <span className="text-xs font-semibold truncate">{ev.title}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {formatEventTime(ev)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               );
             })}
-          </ul>
-        )}
-      </section>
+          </div>
+        </div>
+      )}
 
-      {alsoUpcoming.length > 0 ? (
-        <section aria-labelledby="also-upcoming" className="space-y-2">
-          <h2 id="also-upcoming" className="font-display text-base font-semibold">
-            Also upcoming
-          </h2>
-          <ul className="space-y-2">
-            {alsoUpcoming.map((event) => (
-              <li key={event.id}>
-                <button
-                  type="button"
-                  onClick={() => setDetailsId(event.id)}
-                  className="flex w-full items-between gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/30"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{event.title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {dayHeading(eventDateKey(event))} · {formatEventTime(event)}
-                    </span>
-                  </span>
-                  <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      {/* UPCOMING VIEW */}
+      {viewTab === "upcoming" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm font-semibold">
+              Upcoming Events & Birthdays ({allUpcoming.length})
+            </h2>
+          </div>
+
+          {allUpcoming.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-8 text-center bg-card/50">
+              <p className="text-sm text-muted-foreground">No upcoming events or birthdays scheduled.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 rounded-full"
+                onClick={() => setFormOpen({ open: true, event: null })}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" /> Plan an Event
+              </Button>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {allUpcoming.map((event) => {
+                const eventDay = fromDateKey(eventDateKey(event));
+                const isBirthday = event.id.startsWith("birthday-");
+
+                return (
+                  <li key={event.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isBirthday) toast.info(event.title);
+                        else setDetailsId(event.id);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/30"
+                    >
+                      <span
+                        className={`flex size-11 shrink-0 flex-col items-center justify-center rounded-xl font-bold ${
+                          isBirthday
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                        aria-hidden
+                      >
+                        <span className="text-[10px] uppercase leading-none font-semibold">
+                          {eventDay.toLocaleDateString(undefined, { month: "short", timeZone: "UTC" })}
+                        </span>
+                        <span className="text-sm leading-tight">
+                          {eventDay.getUTCDate()}
+                        </span>
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-xs sm:text-sm font-semibold">{event.title}</span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {dayHeading(eventDateKey(event))} · {formatEventTime(event)}
+                          {event.location ? ` · ${event.location}` : ""}
+                        </span>
+                      </div>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       <EventFormDialog
         open={formOpen.open}

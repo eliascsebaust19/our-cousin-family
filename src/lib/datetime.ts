@@ -16,6 +16,7 @@
 /** "YYYY-MM-DD" in the viewer's local timezone. */
 export function localDateKey(value: string | Date): string {
   const d = toDate(value);
+  if (Number.isNaN(d.getTime())) return "";
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${month}-${day}`;
@@ -23,7 +24,13 @@ export function localDateKey(value: string | Date): string {
 
 /** "YYYY-MM-DD" in UTC (all-day events). */
 export function utcDateKey(value: string | Date): string {
-  return toDate(value).toISOString().slice(0, 10);
+  const d = toDate(value);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
 }
 
 /** Which calendar cell an event belongs to. */
@@ -50,12 +57,13 @@ export function toDate(value: string | Date): Date {
 // ----------------------------------------------------------------------------
 
 /** ISO → value for `<input type="date">` (all-day events store UTC midnight). */
-export function toInputDate(iso: string): string {
+export function toInputDate(iso: string | Date): string {
+  if (iso instanceof Date) return localDateKey(iso);
   return iso.slice(0, 10);
 }
 
 /** ISO → value for `<input type="datetime-local">`, in local time. */
-export function toInputDateTime(iso: string): string {
+export function toInputDateTime(iso: string | Date): string {
   const d = toDate(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return (
@@ -117,7 +125,7 @@ export function monthMatrix(month: Date): string[][] {
   for (let day = 1; day <= daysInMonth; day++) {
     cells.push(localDateKey(new Date(year, month.getMonth(), day)));
   }
-  while (cells.length % 7 !== 0) {
+  while (cells.length % 7 !== 0 || cells.length < 35) {
     cells.push(localDateKey(new Date(year, month.getMonth(), cells.length - leading + 1)));
   }
 

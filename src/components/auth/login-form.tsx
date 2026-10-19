@@ -31,6 +31,16 @@ export function LoginForm({
         "That sign-in link was invalid or expired. Please try again.",
       );
     }
+    if (serverError === "expired_link") {
+      toast.error(
+        "Your verification link has expired. Please sign in or request a new link.",
+      );
+    }
+    if (serverError === "invalid_link") {
+      toast.error(
+        "This verification link is invalid or has already been used.",
+      );
+    }
     if (serverError === "rate_limited") {
       toast.error("Too many attempts. Please wait a minute and try again.");
     }

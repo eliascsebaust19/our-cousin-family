@@ -68,8 +68,8 @@ export function ludoIsSafeSquare(seats: number, square: number): boolean {
 const SEAT_COLOR_NAMES = [
   "red",
   "green",
-  "blue",
   "yellow",
+  "blue",
   "purple",
   "orange",
   "teal",
@@ -84,10 +84,10 @@ export function ludoSeatColorName(seat: number): LudoColorName {
 
 /** Hex values tuned for the app's warm light + dark themes. */
 export const LUDO_COLOR_HEX: Record<LudoColorName, string> = {
-  red: "#e05252",
-  green: "#3f9d63",
-  blue: "#4a7fd4",
-  yellow: "#d8a32b",
+  red: "#DC2626",
+  green: "#16A34A",
+  yellow: "#CA8A04",
+  blue: "#2563EB",
   purple: "#8b5cf6",
   orange: "#e0823a",
   teal: "#2f9d94",
@@ -96,6 +96,152 @@ export const LUDO_COLOR_HEX: Record<LudoColorName, string> = {
 
 export function ludoSeatHex(seat: number): string {
   return LUDO_COLOR_HEX[ludoSeatColorName(seat)];
+}
+
+// ---------------------------------------------------------------------------
+// Classic 15x15 Square Board Layout (for 4 players)
+// Matches authentic traditional Ludo boards
+// ---------------------------------------------------------------------------
+export const LUDO_SQUARE_VIEWBOX = 1500;
+export const LUDO_SQUARE_CELL = 100;
+
+export const LUDO_SQUARE_TRACK_CELLS: Array<[number, number]> = [
+  // Arm 0 (Red start to Top Arm entrance)
+  [1, 6],  // 0: Red Start Square (star)
+  [2, 6],  // 1
+  [3, 6],  // 2
+  [4, 6],  // 3
+  [5, 6],  // 4
+  [6, 5],  // 5: Turn up
+  [6, 4],  // 6
+  [6, 3],  // 7
+  [6, 2],  // 8: Safe Square (star)
+  [6, 1],  // 9
+  [6, 0],  // 10
+  [7, 0],  // 11: Top edge center
+  [8, 0],  // 12: Turn down
+
+  // Arm 1 (Green start to Right Arm entrance)
+  [8, 1],  // 13: Green Start Square (star)
+  [8, 2],  // 14
+  [8, 3],  // 15
+  [8, 4],  // 16
+  [8, 5],  // 17
+  [9, 6],  // 18: Turn right
+  [10, 6], // 19
+  [11, 6], // 20
+  [12, 6], // 21: Safe Square (star)
+  [13, 6], // 22
+  [14, 6], // 23
+  [14, 7], // 24: Right edge center
+  [14, 8], // 25: Turn left
+
+  // Arm 2 (Yellow start to Bottom Arm entrance)
+  [13, 8], // 26: Yellow Start Square (star)
+  [12, 8], // 27
+  [11, 8], // 28
+  [10, 8], // 29
+  [9, 8],  // 30
+  [8, 9],  // 31: Turn down
+  [8, 10], // 32
+  [8, 11], // 33
+  [8, 12], // 34: Safe Square (star)
+  [8, 13], // 35
+  [8, 14], // 36
+  [7, 14], // 37: Bottom edge center
+  [6, 14], // 38: Turn up
+
+  // Arm 3 (Blue start to Left Arm entrance)
+  [6, 13], // 39: Blue Start Square (star)
+  [6, 12], // 40
+  [6, 11], // 41
+  [6, 10], // 42
+  [6, 9],  // 43
+  [5, 8],  // 44: Turn left
+  [4, 8],  // 45
+  [3, 8],  // 46
+  [2, 8],  // 47: Safe Square (star)
+  [1, 8],  // 48
+  [0, 8],  // 49
+  [0, 7],  // 50: Left edge center
+  [0, 6],  // 51: Turn right to index 0
+];
+
+/** Return center coordinates {x, y} for ring index 0..51 on the classic square board */
+export function ludoSquareRingPoint(index: number): Point {
+  const [col, row] = LUDO_SQUARE_TRACK_CELLS[index % 52]!;
+  return {
+    x: col * LUDO_SQUARE_CELL + LUDO_SQUARE_CELL / 2,
+    y: row * LUDO_SQUARE_CELL + LUDO_SQUARE_CELL / 2,
+  };
+}
+
+/** Return center coordinates {x, y} for home column cell (step 0..4) for a seat */
+export function ludoSquareColumnPoint(seat: number, step: number): Point {
+  let col = 7;
+  let row = 7;
+  if (seat === 0) {
+    col = 1 + step;
+    row = 7;
+  } else if (seat === 1) {
+    col = 7;
+    row = 1 + step;
+  } else if (seat === 2) {
+    col = 13 - step;
+    row = 7;
+  } else if (seat === 3) {
+    col = 7;
+    row = 13 - step;
+  }
+  return {
+    x: col * LUDO_SQUARE_CELL + LUDO_SQUARE_CELL / 2,
+    y: row * LUDO_SQUARE_CELL + LUDO_SQUARE_CELL / 2,
+  };
+}
+
+/** Return yard token spots {x, y} for each seat on the classic square board */
+export function ludoSquareYardPoint(seat: number, tokenIndex: number): Point {
+  const offsets = [
+    { dx: 180, dy: 180 },
+    { dx: 420, dy: 180 },
+    { dx: 180, dy: 420 },
+    { dx: 420, dy: 420 },
+  ];
+  const offset = offsets[tokenIndex % 4]!;
+  let originX = 0;
+  let originY = 0;
+  if (seat === 0) {
+    originX = 0;
+    originY = 0;
+  } else if (seat === 1) {
+    originX = 900;
+    originY = 0;
+  } else if (seat === 2) {
+    originX = 900;
+    originY = 900;
+  } else if (seat === 3) {
+    originX = 0;
+    originY = 900;
+  }
+  return {
+    x: originX + offset.dx,
+    y: originY + offset.dy,
+  };
+}
+
+/** Center finish apex points for finished tokens in the 4 triangles */
+export function ludoSquareFinishPoint(seat: number, tokenIndex: number): Point {
+  const center = 750;
+  const spread = 24 * (tokenIndex - 1.5);
+  if (seat === 0) {
+    return { x: 675, y: center + spread };
+  } else if (seat === 1) {
+    return { x: center + spread, y: 675 };
+  } else if (seat === 2) {
+    return { x: 825, y: center + spread };
+  } else {
+    return { x: center + spread, y: 825 };
+  }
 }
 
 // ---------------------------------------------------------------------------

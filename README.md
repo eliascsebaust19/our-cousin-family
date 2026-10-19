@@ -24,12 +24,12 @@ credentials and a real backend.
 | Chat (direct + group, text, photos, voice notes, typing, edit/delete) | ✅ Code complete |
 | Notifications, profile, settings, themes | ✅ Code complete |
 | Family calendar (events, RSVPs, realtime) | ✅ Code complete |
-| Ludo — server-authoritative engine + UI (4/6/8 players) | ✅ Code complete, engine verified by `npm run db:check` |
+| Ludo — server-authoritative engine + UI (4/6/8 players + autoplay) | ✅ Code complete & verified by `npm run db:check` |
 | Memory Vault (Google Drive) | ✅ Code complete (Edge Functions + RLS + UI) — needs Google credentials to run |
-| Migrations + RLS policies | ✅ Verified by `npm run db:check`, **not yet applied** (no Supabase project exists) |
+| Migrations + RLS policies | ✅ 8 migrations verified by `npm run db:check`, ready to apply to live Supabase |
 | LiveKit audio/video calls | ✅ Code complete (token Edge Function + lobby + in-room UI) — needs LiveKit Cloud keys to run |
-| Automated tests (Vitest + Playwright) | ⏳ Planned for the final milestone |
-| First deployment | ⏳ Blocked on your Supabase + Vercel accounts (see guides) |
+| Automated tests (Vitest + Playwright) | ✅ Complete (132 Vitest unit tests + Playwright smoke suite + GitHub Actions CI) |
+| First deployment | ⏳ Ready for live deploy on your Supabase + Vercel accounts (see guides) |
 
 **The app has never yet run against a live backend.** It will not start
 meaningfully until you create a Supabase project and apply the migrations —
@@ -220,10 +220,9 @@ Deploy to Vercel after Supabase is set up:
   recorded. While the OAuth app is in **Testing** mode Google expires refresh
   tokens after 7 days, so the connection must be re-authorised weekly until the
   app is published.
-- **Ludo**: the engine (dice, legality, turn timers, rankings) runs entirely in
+- **Ludo**: the engine (dice, legality, turn timers, rankings, autoplay) runs entirely in
   Postgres security-definer functions, verified by `npm run db:check`; the UI
-  drives it over RPC + Realtime. `ludo_seats.autoplay` exists in the schema but
-  has no RPC yet, so "let the computer play for me" is not exposed.
+  drives it over RPC + Realtime.
 - **Calls**: the code is complete and payments-free, but a call cannot start
   until you create a LiveKit Cloud project and deploy the token function
   ([docs/SETUP-LIVEKIT.md](docs/SETUP-LIVEKIT.md)). Rooms are derived from rows
@@ -240,8 +239,9 @@ Deploy to Vercel after Supabase is set up:
   are in-app only.
 - `src/types/database.types.ts` is hand-written; regenerate it with
   `supabase gen types typescript --linked` after linking the CLI.
-- Automated tests (Vitest + Playwright) are planned for the final milestone;
-  today `npm run db:check`, `typecheck`, `lint` and `build` are the gates.
+- Automated tests: 132 Vitest unit tests (`npm run test`) and Playwright E2E
+  smoke tests (`npm run test:e2e`) are configured alongside `npm run db:check`,
+  `typecheck`, `lint` and `build`.
 
 ## Milestones
 
@@ -250,5 +250,6 @@ Deploy to Vercel after Supabase is set up:
 2. **M2 — done.** ✅ Family calendar, ✅ Ludo (server-authoritative engine + UI
    for 4/6/8 players), ✅ Memory Vault (Drive Edge Functions, RLS, UI),
    ✅ LiveKit audio/video calls (token Edge Function, lobby, in-room UI).
-3. **M3** — polish, Vitest + Playwright coverage, security audit, first
-   deploy.
+3. **M3 — in progress / mostly complete.** ✅ Ludo autoplay RPC, ✅ Vitest unit
+   test suite (132 tests), ✅ Playwright E2E smoke suite, ✅ GitHub Actions CI,
+   ⏳ Live cloud accounts provisioning & first deploy.

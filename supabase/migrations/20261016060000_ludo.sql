@@ -480,7 +480,7 @@ create or replace function public.ludo_do_roll(
   p_game_id uuid, p_forced_dice int, p_is_auto boolean
 )
 returns void
-language plpgsql security definer set search_path = public, pg_temp
+language plpgsql security definer set search_path = public, extensions, pg_temp
 as $$
 declare
   g      public.ludo_games%rowtype;
@@ -507,7 +507,7 @@ begin
     v_dice := p_forced_dice;
   else
     loop
-      v_byte := get_byte(gen_random_bytes(1), 0);
+      v_byte := get_byte(extensions.gen_random_bytes(1), 0);
       exit when v_byte < 240;                -- 240 = 6 x 40 keeps the die fair
     end loop;
     v_dice := (v_byte % 6) + 1;

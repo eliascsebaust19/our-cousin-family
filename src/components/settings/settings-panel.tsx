@@ -4,8 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeftRight,
   Bell,
+  Check,
   ChevronRight,
+  Download,
+  Loader2,
   LogOut,
   Moon,
   Palette,
@@ -17,6 +21,7 @@ import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { usePwaInstall } from "@/components/pwa/pwa-install-prompt";
 
 type ThemeChoice = "light" | "dark" | "system";
 
@@ -33,22 +38,49 @@ const THEME_OPTIONS: {
 export function SettingsPanel() {
   const router = useRouter();
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const { isInstallable, isInstalled, promptInstall } = usePwaInstall();
   const [mounted, setMounted] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
   async function signOut() {
     setSigningOut(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setSigningOut(false);
-      toast.error(error.message);
-      return;
+    try {
+      localStorage.removeItem("ocf:activeFamilyId");
+      sessionStorage.clear();
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      window.location.href = "/login";
     }
-    router.push("/login");
-    router.refresh();
+  }
+
+  async function switchAccount() {
+    setSwitching(true);
+    try {
+      localStorage.removeItem("ocf:activeFamilyId");
+      sessionStorage.clear();
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      const redirect = typeof window !== "undefined" ? window.location.origin : "";
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${redirect}/auth/callback`,
+          queryParams: {
+            prompt: "select_account",
+            access_type: "offline",
+          },
+        },
+      });
+    } catch (e) {
+      console.error(e);
+      window.location.href = "/login";
+    }
   }
 
   return (
@@ -131,17 +163,76 @@ export function SettingsPanel() {
         </ul>
       </section>
 
+      {/* Progressive Web App / Mobile Installation Section */}
       <section className="rounded-2xl border border-border bg-card p-4">
+        <h2 className="flex items-center gap-1.5 font-display text-base font-semibold">
+          <Download className="h-4 w-4 text-primary" aria-hidden />
+          Mobile App & Installation
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Install Our Cousin Family on your phone&apos;s home screen for quick standalone access, offline support, and full-screen experience.
+        </p>
+
+        <div className="mt-3">
+          {isInstalled ? (
+            <div className="flex items-center gap-2 rounded-xl bg-primary/10 p-3 text-xs font-medium text-primary">
+              <Check className="h-4 w-4 shrink-0 text-primary" />
+              <span>Installed on this device as a standalone app</span>
+            </div>
+          ) : isInstallable ? (
+            <Button
+              onClick={() => void promptInstall()}
+              className="h-11 w-full rounded-full bg-primary font-semibold text-primary-foreground hover:brightness-110"
+            >
+              <Download className="mr-2 h-4 w-4" /> Install to Home Screen
+            </Button>
+          ) : (
+            <div className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">How to install manually:</p>
+              <p className="mt-1">
+                • <strong>Android / Chrome / Edge:</strong> Open browser menu (⋮) and tap <em>&quot;Install app&quot;</em> or <em>&quot;Add to Home screen&quot;</em>.
+              </p>
+              <p className="mt-1">
+                • <strong>iPhone / Safari:</strong> Tap the Share button (square with arrow) and tap <em>&quot;Add to Home Screen&quot;</em>.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-4 space-y-2.5">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          Account & Session
+        </h2>
         <Button
+          type="button"
           variant="outline"
-          className="h-12 w-full rounded-full text-destructive hover:text-destructive"
-          onClick={() => void signOut()}
-          disabled={signingOut}
+          className="h-12 w-full rounded-full font-medium"
+          onClick={() => void switchAccount()}
+          disabled={switching || signingOut}
         >
-          <LogOut className="mr-1.5 h-4 w-4" aria-hidden />
+          {switching ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin text-primary" />
+          ) : (
+            <ArrowLeftRight className="mr-2 h-4 w-4 text-primary" />
+          )}
+          {switching ? "Switching account…" : "Switch Account"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 w-full rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => void signOut()}
+          disabled={signingOut || switching}
+        >
+          {signingOut ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <LogOut className="mr-2 h-4 w-4" />
+          )}
           {signingOut ? "Signing out…" : "Sign out"}
         </Button>
-        <p className="mt-3 text-center text-xs text-muted-foreground">
+        <p className="mt-2 text-center text-xs text-muted-foreground">
           Our Cousin Family — a private space for your relatives. Only invited
           family members can ever see what&apos;s shared here.
         </p>

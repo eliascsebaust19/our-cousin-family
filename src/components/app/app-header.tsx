@@ -15,6 +15,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ROLE_LABELS } from "@/lib/constants";
+import { InstallAppButton } from "@/components/pwa/pwa-install-prompt";
 
 function FamilyBadge({ name, size = 32 }: { name: string; size?: number }) {
   const initials = name
@@ -138,22 +139,25 @@ export function AppHeader() {
           </SheetContent>
         </Sheet>
 
-        <Link
-          href="/notifications"
-          aria-label={
-            unreadNotifications > 0
-              ? `Notifications, ${unreadNotifications} unread`
-              : "Notifications"
-          }
-          className="relative flex h-11 w-11 items-center justify-center rounded-full text-foreground/80 transition hover:bg-accent hover:text-foreground"
-        >
-          <Bell className="h-5 w-5" aria-hidden />
-          {unreadNotifications > 0 ? (
-            <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-warm px-1 text-[10px] font-bold leading-none text-white">
-              {unreadNotifications > 9 ? "9+" : unreadNotifications}
-            </span>
-          ) : null}
-        </Link>
+        <div className="flex items-center gap-1.5">
+          <InstallAppButton size="sm" variant="ghost" className="h-9 px-2 text-xs text-primary hover:bg-primary/10" />
+          <Link
+            href="/notifications"
+            aria-label={
+              unreadNotifications > 0
+                ? `Notifications, ${unreadNotifications} unread`
+                : "Notifications"
+            }
+            className="relative flex h-11 w-11 items-center justify-center rounded-full text-foreground/80 transition hover:bg-accent hover:text-foreground"
+          >
+            <Bell className="h-5 w-5" aria-hidden />
+            {unreadNotifications > 0 ? (
+              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-warm px-1 text-[10px] font-bold leading-none text-white">
+                {unreadNotifications > 9 ? "9+" : unreadNotifications}
+              </span>
+            ) : null}
+          </Link>
+        </div>
       </div>
     </header>
   );

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { FEED_SELECT, channels } from "@/lib/queries";
 import { useFamily } from "@/components/app/family-provider";
 import { PostCard } from "@/components/feed/post-card";
+import { QuickFeaturesBar } from "@/components/feed/quick-features-bar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FeedPost } from "@/lib/types";
@@ -72,7 +73,16 @@ export function Feed() {
         return;
       }
 
-      const rows = (data ?? []) as unknown as FeedPost[];
+      const rawRows = (data ?? []) as unknown as FeedPost[];
+      const rows: FeedPost[] = rawRows.map((post) => {
+        const sp = Array.isArray(post.shared_post)
+          ? post.shared_post[0] ?? null
+          : post.shared_post ?? null;
+        return {
+          ...post,
+          shared_post: sp && sp.id ? sp : null,
+        };
+      });
       setError(null);
       setHasMore(rows.length === PAGE_SIZE);
       setPosts((current) => {
@@ -208,6 +218,8 @@ export function Feed() {
           />
         </Button>
       </div>
+
+      <QuickFeaturesBar />
 
       {loading ? (
         <div className="space-y-4">

@@ -2,19 +2,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 
-/** Routes that do not require an authenticated session. */
 const PUBLIC_PREFIXES = [
-  "/",
   "/login",
   "/signup",
   "/forgot-password",
   "/reset-password",
   "/auth",
   "/join", // invitation preview; joining itself requires sign-in
+  "/manifest.webmanifest",
+  "/sw.js",
+  "/offline.html",
   "/api/public",
 ];
 
 function isPublicPath(pathname: string): boolean {
+  if (pathname === "/") return true;
   return PUBLIC_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
@@ -58,6 +60,9 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (!user && !isPublicPath(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
@@ -84,6 +89,6 @@ export const config = {
      * - _next/static, _next/image
      * - favicon and other static files
      */
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|manifest\\.webmanifest|sw\\.js|offline\\.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
   ],
 };

@@ -41,6 +41,10 @@ export function GoogleSignInButton({ next }: { next?: string }) {
       provider: "google",
       options: {
         redirectTo: `${redirect}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ""}`,
+        queryParams: {
+          prompt: "select_account",
+          access_type: "offline",
+        },
       },
     });
     if (error) {

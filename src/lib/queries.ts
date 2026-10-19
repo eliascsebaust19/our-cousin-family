@@ -15,7 +15,7 @@ export const FEED_SELECT = `
   post_media(id, storage_path, media_type, mime_type, width, height, position),
   post_reactions(user_id, reaction),
   comments(count),
-  shared_post:posts!posts_shared_post_id_fkey(
+  shared_post:posts!shared_post_id(
     id, content, created_at,
     author:profiles!posts_author_id_fkey(id, full_name, avatar_url)
   )
@@ -40,7 +40,7 @@ export const CONVERSATION_LIST_SELECT = `
 
 export const CALENDAR_SELECT = `
   id, family_id, created_by, title, description, location, starts_at, ends_at,
-  all_day, created_at,
+  all_day, category, cover_url, is_recurring, recurrence_rule, created_at,
   author:profiles!family_events_created_by_fkey(${PROFILE_FIELDS}),
   rsvps:event_rsvps!event_rsvps_event_id_fkey(
     event_id, user_id, response, note,

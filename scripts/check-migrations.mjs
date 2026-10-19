@@ -52,6 +52,9 @@ const AUTHENTICATED_RPCS = [
   "public.ludo_pass(uuid, int)",
   "public.ludo_auto_resolve(uuid)",
   "public.ludo_snapshot(uuid)",
+  "public.ludo_set_autoplay(uuid, boolean)",
+  "public.ludo_delete_game(uuid)",
+  "public.ludo_leave_game(uuid)",
   "public.vault_item_family_id(uuid)",
 ];
 
@@ -202,7 +205,8 @@ const { rows: ludoHelperRows } = await db.query(
     where n.nspname = 'public' and p.proname like 'ludo\\_%'
       and p.proname not in ('ludo_create_game', 'ludo_join_game', 'ludo_start_game',
                              'ludo_roll', 'ludo_move', 'ludo_pass', 'ludo_auto_resolve',
-                             'ludo_snapshot', 'ludo_game_family_id')
+                             'ludo_snapshot', 'ludo_set_autoplay', 'ludo_delete_game',
+                             'ludo_leave_game', 'ludo_game_family_id')
       and (has_function_privilege('anon', p.oid::regprocedure::text, 'execute')
         or has_function_privilege('authenticated', p.oid::regprocedure::text, 'execute'))`,
 );
@@ -1050,6 +1054,14 @@ check(
   autoSnap.turnSeat === 1 && autoSnap.phase === "awaiting_roll",
   `turn=${autoSnap.turnSeat} phase=${autoSnap.phase}`,
 );
+
+await asRole("authenticated", C, () =>
+  db.query("select public.ludo_set_autoplay($1, true)", [ludo2]),
+);
+const seatC = (await asRole("authenticated", C, () =>
+  db.query("select autoplay from public.ludo_seats where game_id = $1 and user_id = $2", [ludo2, C]),
+)).rows[0];
+check("seated player can toggle autoplay", seatC?.autoplay === true);
 
 // An authenticated caller outside the family sees nothing.
 const ludoScope = await asRole("authenticated", B, () =>

@@ -2,8 +2,19 @@
 
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LudoGame } from "./ludo-game";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import { LudoLobby } from "./ludo-lobby";
+
+const LudoGame = dynamic(() => import("./ludo-game").then((m) => m.LudoGame), {
+  loading: () => (
+    <div className="space-y-4">
+      <Skeleton className="h-9 w-40 rounded-full" />
+      <Skeleton className="aspect-square w-full rounded-3xl" />
+      <Skeleton className="h-24 w-full rounded-2xl" />
+    </div>
+  ),
+});
 
 /**
  * Chooses between the lobby and a single game based on `/ludo?game=<id>`.

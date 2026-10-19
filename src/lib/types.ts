@@ -65,12 +65,20 @@ export type FeedPost = {
   post_media: PostMediaItem[];
   post_reactions: { user_id: string; reaction: string }[];
   comments: { count: number }[];
-  shared_post?: {
-    id: string;
-    content: string | null;
-    created_at: string;
-    author: Pick<ProfileLite, "id" | "full_name" | "avatar_url"> | null;
-  } | null;
+  shared_post?:
+    | {
+        id: string;
+        content: string | null;
+        created_at: string;
+        author: Pick<ProfileLite, "id" | "full_name" | "avatar_url"> | null;
+      }
+    | Array<{
+        id: string;
+        content: string | null;
+        created_at: string;
+        author: Pick<ProfileLite, "id" | "full_name" | "avatar_url"> | null;
+      }>
+    | null;
 };
 
 export type CommentItem = {
@@ -137,6 +145,15 @@ export type EventRsvp = {
   profile: ProfileLite | null;
 };
 
+export type CalendarCategory =
+  | "birthday"
+  | "wedding"
+  | "reunion"
+  | "eid"
+  | "anniversary"
+  | "gathering"
+  | "other";
+
 export type CalendarEvent = {
   id: string;
   family_id: string;
@@ -147,6 +164,10 @@ export type CalendarEvent = {
   starts_at: string;
   ends_at: string | null;
   all_day: boolean;
+  category?: CalendarCategory;
+  cover_url?: string | null;
+  is_recurring?: boolean;
+  recurrence_rule?: string | null;
   created_at: string;
   author: ProfileLite | null;
   rsvps: EventRsvp[];
@@ -297,3 +318,251 @@ export type CallToken = {
   identity: string;
   token: string;
 };
+
+// ---------------------------------------------------------------------------
+// 1. Family Tree
+// ---------------------------------------------------------------------------
+
+export type TreeGender = "male" | "female" | "other";
+export type TreeRelType = "parent" | "child" | "spouse" | "sibling";
+export type TreeRelStatus = "approved" | "suggested" | "rejected";
+
+export type FamilyTreeMember = {
+  id: string;
+  family_id: string;
+  profile_id: string | null;
+  full_name: string;
+  gender: TreeGender | null;
+  birth_date: string | null;
+  death_date: string | null;
+  is_deceased: boolean;
+  bio: string | null;
+  avatar_url: string | null;
+  generation: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  profile?: ProfileLite | null;
+};
+
+export type FamilyTreeRelationship = {
+  id: string;
+  family_id: string;
+  person_id: string;
+  related_person_id: string;
+  relationship_type: TreeRelType;
+  status: TreeRelStatus;
+  created_by: string;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+  person?: FamilyTreeMember;
+  related_person?: FamilyTreeMember;
+};
+
+// ---------------------------------------------------------------------------
+// 2. Calendar Reminders
+// ---------------------------------------------------------------------------
+
+export type EventReminderType = "1_day_before" | "1_hour_before" | "on_day";
+
+export type EventReminder = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  reminder_type: EventReminderType;
+  is_sent: boolean;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------------------
+// 3. Voice Memory & Story Archive
+// ---------------------------------------------------------------------------
+
+export type VoiceMemory = {
+  id: string;
+  family_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  speaker_name: string;
+  speaker_id: string | null;
+  recorded_date: string;
+  language: string;
+  tags: string[];
+  audio_url: string;
+  duration_seconds: number;
+  file_size_bytes: number;
+  cover_url: string | null;
+  transcript: string | null;
+  transcript_status: "none" | "pending" | "completed" | "failed";
+  transcript_updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  creator?: ProfileLite | null;
+  speaker?: ProfileLite | null;
+};
+
+// ---------------------------------------------------------------------------
+// 4. Family Travel & Reunion Planner
+// ---------------------------------------------------------------------------
+
+export type ReunionStatus = "planning" | "confirmed" | "completed" | "cancelled";
+export type ReunionParticipantStatus = "going" | "interested" | "declined";
+
+export type ReunionPlan = {
+  id: string;
+  family_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  destination: string;
+  cover_url: string | null;
+  start_date: string;
+  end_date: string | null;
+  status: ReunionStatus;
+  estimated_budget: number;
+  created_at: string;
+  updated_at: string;
+  creator?: ProfileLite | null;
+  participants?: ReunionParticipant[];
+  itinerary?: ReunionItineraryItem[];
+  tasks?: ReunionTask[];
+  expenses?: ReunionExpense[];
+};
+
+export type ReunionParticipant = {
+  id: string;
+  reunion_id: string;
+  user_id: string;
+  status: ReunionParticipantStatus;
+  adults_count: number;
+  kids_count: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  profile?: ProfileLite | null;
+};
+
+export type ReunionItineraryItem = {
+  id: string;
+  reunion_id: string;
+  day_number: number;
+  activity_time: string | null;
+  title: string;
+  location: string | null;
+  description: string | null;
+  created_at: string;
+};
+
+export type ReunionTask = {
+  id: string;
+  reunion_id: string;
+  title: string;
+  category: "transport" | "food" | "lodging" | "supplies" | "activities" | "general";
+  assigned_to: string | null;
+  due_date: string | null;
+  is_completed: boolean;
+  completed_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+  assignee?: ProfileLite | null;
+};
+
+export type ReunionExpense = {
+  id: string;
+  reunion_id: string;
+  title: string;
+  category: "food" | "transport" | "lodging" | "tickets" | "activities" | "other";
+  estimated_amount: number;
+  actual_amount: number;
+  paid_by: string | null;
+  payer_name: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+// ---------------------------------------------------------------------------
+// 5. Family Fund & Shared Expenses (Record-keeping Only)
+// ---------------------------------------------------------------------------
+
+export type ContributionStatus = "pledged" | "received" | "cancelled";
+export type PaymentMethod = "cash" | "bkash" | "nagad" | "bank_transfer" | "other";
+export type ExpenseStatus = "pending_review" | "approved" | "rejected";
+export type ExpenseCategory =
+  | "food"
+  | "transport"
+  | "medical"
+  | "gifts"
+  | "events"
+  | "utilities"
+  | "other";
+
+export type FamilyFund = {
+  id: string;
+  family_id: string;
+  created_by: string;
+  title: string;
+  purpose: string | null;
+  target_amount: number;
+  deadline: string | null;
+  is_closed: boolean;
+  is_private: boolean;
+  created_at: string;
+  updated_at: string;
+  creator?: ProfileLite | null;
+  contributions?: FundContribution[];
+  expenses?: FundExpense[];
+};
+
+export type FundContribution = {
+  id: string;
+  fund_id: string;
+  family_id: string;
+  contributor_name: string;
+  contributor_id: string | null;
+  amount: number;
+  status: ContributionStatus;
+  payment_method: PaymentMethod;
+  notes: string | null;
+  received_at: string | null;
+  confirmed_by: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  contributor?: ProfileLite | null;
+};
+
+export type FundExpense = {
+  id: string;
+  family_id: string;
+  fund_id: string | null;
+  title: string;
+  category: ExpenseCategory;
+  amount: number;
+  spent_at: string;
+  payer_name: string;
+  payer_id: string | null;
+  receipt_url: string | null;
+  description: string | null;
+  status: ExpenseStatus;
+  approved_by: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  payer?: ProfileLite | null;
+  fund?: { id: string; title: string } | null;
+};
+
+export type FinancialAuditLog = {
+  id: string;
+  family_id: string;
+  actor_id: string;
+  action: string;
+  target_type: "fund" | "contribution" | "expense";
+  target_id: string;
+  details: Record<string, unknown>;
+  created_at: string;
+  actor?: ProfileLite | null;
+};
+

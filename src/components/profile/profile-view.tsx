@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeftRight,
   Bell,
   CalendarDays,
   ChevronRight,
+  Download,
+  Loader2,
   LogOut,
   Pencil,
   Settings,
@@ -16,6 +19,7 @@ import { formatBirthday, upcomingBirthday } from "@/lib/format";
 import { RELATIONSHIPS, ROLE_LABELS } from "@/lib/constants";
 import { useFamily } from "@/components/app/family-provider";
 import { UserAvatar } from "@/components/app/user-avatar";
+import { usePwaInstall } from "@/components/pwa/pwa-install-prompt";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FamilyLite } from "@/lib/types";
@@ -30,7 +34,48 @@ export function ProfileView() {
     pendingFamilies,
     setActiveFamilyId,
   } = useFamily();
+  const { isInstalled, promptInstall } = usePwaInstall();
   const [online, setOnline] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      localStorage.removeItem("ocf:activeFamilyId");
+      sessionStorage.clear();
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      window.location.href = "/login";
+    }
+  }
+
+  async function handleSwitchAccount() {
+    setSwitching(true);
+    try {
+      localStorage.removeItem("ocf:activeFamilyId");
+      sessionStorage.clear();
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      const redirect = typeof window !== "undefined" ? window.location.origin : "";
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${redirect}/auth/callback`,
+          queryParams: {
+            prompt: "select_account",
+            access_type: "offline",
+          },
+        },
+      });
+    } catch (e) {
+      console.error(e);
+      window.location.href = "/login";
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -211,10 +256,62 @@ export function ProfileView() {
         <Skeleton className="hidden h-2 w-full" />
       ) : null}
 
-      <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-        <LogOut className="h-3.5 w-3.5" aria-hidden />
-        Sign out is under Settings.
-      </p>
+      <section className="rounded-2xl border border-border bg-card p-4 space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          Account & Session
+        </h2>
+        <div className="grid gap-2">
+          {!isInstalled && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full justify-start rounded-xl font-medium border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+              onClick={() => void promptInstall()}
+            >
+              <Download className="mr-3 h-4 w-4 shrink-0 text-primary" />
+              <div className="flex flex-col text-left min-w-0 flex-1">
+                <span className="text-xs font-semibold leading-tight">Install App on Phone</span>
+                <span className="text-[10px] text-muted-foreground leading-tight">Add to home screen for fast fullscreen access</span>
+              </div>
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 w-full justify-start rounded-xl font-medium"
+            onClick={() => void handleSwitchAccount()}
+            disabled={switching || signingOut}
+          >
+            {switching ? (
+              <Loader2 className="mr-3 h-4 w-4 animate-spin text-primary shrink-0" />
+            ) : (
+              <ArrowLeftRight className="mr-3 h-4 w-4 text-primary shrink-0" />
+            )}
+            <div className="flex flex-col text-left min-w-0 flex-1">
+              <span className="text-xs font-semibold leading-tight">Switch Account</span>
+              <span className="text-[10px] text-muted-foreground leading-tight">Log in with another Gmail or account on this phone</span>
+            </div>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 w-full justify-start rounded-xl font-medium border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => void handleSignOut()}
+            disabled={signingOut || switching}
+          >
+            {signingOut ? (
+              <Loader2 className="mr-3 h-4 w-4 animate-spin shrink-0" />
+            ) : (
+              <LogOut className="mr-3 h-4 w-4 shrink-0" />
+            )}
+            <div className="flex flex-col text-left min-w-0 flex-1">
+              <span className="text-xs font-semibold leading-tight">Log out of this ID</span>
+              <span className="text-[10px] text-muted-foreground leading-tight">Sign out of {profile.full_name || "your account"}</span>
+            </div>
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

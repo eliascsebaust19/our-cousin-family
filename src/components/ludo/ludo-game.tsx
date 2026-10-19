@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Dices, Flag, Hourglass, Play, Timer, Trophy } from "lucide-react";
+import { ArrowLeft, Bot, Dices, Flag, Hourglass, LogOut, Play, Timer, Trash2, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { LUDO_GAME_SELECT, channels } from "@/lib/queries";
@@ -25,7 +25,7 @@ type LudoGameProps = {
 };
 
 export function LudoGame({ gameId, onBack }: LudoGameProps) {
-  const { userId } = useFamily();
+  const { userId, roleInActiveFamily } = useFamily();
   const [game, setGame] = useState<LudoGameListItem | null>(null);
   const [snapshot, setSnapshot] = useState<LudoSnapshot | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -113,10 +113,11 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
     () => [...(game?.seats ?? [])].sort((a, b) => a.seat - b.seat),
     [game?.seats],
   );
-  const mySeat = useMemo(
-    () => seats.find((seat) => seat.user_id === userId)?.seat ?? null,
+  const mySeatRow = useMemo(
+    () => seats.find((seat) => seat.user_id === userId) ?? null,
     [seats, userId],
   );
+  const mySeat = mySeatRow?.seat ?? null;
   const isHost = game?.created_by === userId;
   const status = snapshot?.status ?? game?.status ?? "waiting";
   const phase = snapshot?.phase ?? "awaiting_roll";
@@ -234,6 +235,39 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
       if (error) throw error;
     });
 
+  const toggleAutoplay = () => {
+    if (!mySeatRow) return;
+    const target = !mySeatRow.autoplay;
+    return act(async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("ludo_set_autoplay", {
+        p_game_id: gameId,
+        p_autoplay: target,
+      });
+      if (error) throw error;
+      toast.success(target ? "Autoplay enabled" : "Autoplay disabled");
+    });
+  };
+
+  const leave = () =>
+    act(async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("ludo_leave_game", { p_game_id: gameId });
+      if (error) throw error;
+      toast.success("You left the game.");
+      onBack();
+    });
+
+  const deleteRoom = () =>
+    act(async () => {
+      if (!window.confirm("Are you sure you want to delete this game room?")) return;
+      const supabase = createClient();
+      const { error } = await supabase.rpc("ludo_delete_game", { p_game_id: gameId });
+      if (error) throw error;
+      toast.success("Game room deleted.");
+      onBack();
+    });
+
   // ---- views ---------------------------------------------------------------
   if (failure) {
     return (
@@ -281,6 +315,19 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
           </p>
         </div>
         <StatusBadge status={status} />
+        {(isHost || roleInActiveFamily === "owner" || roleInActiveFamily === "admin") && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={deleteRoom}
+            disabled={busy}
+            title="Delete game room"
+            aria-label="Delete game room"
+            className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        )}
       </div>
 
       {notice ? (
@@ -320,14 +367,24 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
                 </Button>
               ) : null}
               {mySeat !== null ? (
-                <span className="inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm">
-                  <span
-                    className="size-3 rounded-full"
-                    style={{ backgroundColor: ludoSeatHex(mySeat) }}
-                    aria-hidden
-                  />
-                  You are seat {mySeat + 1}
-                </span>
+                <>
+                  <span className="inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm">
+                    <span
+                      className="size-3 rounded-full"
+                      style={{ backgroundColor: ludoSeatHex(mySeat) }}
+                      aria-hidden
+                    />
+                    You are seat {mySeat + 1}
+                  </span>
+                  <Button
+                    variant="outline"
+                    onClick={leave}
+                    disabled={busy}
+                    className="h-11 rounded-full text-muted-foreground hover:text-destructive"
+                  >
+                    <LogOut className="mr-1.5 size-4" /> Leave game
+                  </Button>
+                </>
               ) : null}
             </div>
           </>
@@ -363,9 +420,21 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
                   </li>
                 ))}
             </ol>
-            <Button onClick={onBack} variant="outline" className="h-11 rounded-full">
-              <ArrowLeft className="size-4" /> Back to games
-            </Button>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button onClick={onBack} variant="outline" className="h-11 rounded-full">
+                <ArrowLeft className="size-4" /> Back to games
+              </Button>
+              {(isHost || roleInActiveFamily === "owner" || roleInActiveFamily === "admin") && (
+                <Button
+                  onClick={deleteRoom}
+                  variant="outline"
+                  disabled={busy}
+                  className="h-11 rounded-full text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="size-4 mr-1.5" /> Delete room
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
           <>
@@ -437,6 +506,19 @@ export function LudoGame({ gameId, onBack }: LudoGameProps) {
                   {turnLabel ?? "They"} can move {legalMoves.length} token
                   {legalMoves.length === 1 ? "" : "s"}.
                 </span>
+              ) : null}
+
+              {mySeatRow && status === "playing" ? (
+                <Button
+                  onClick={toggleAutoplay}
+                  disabled={busy}
+                  variant={mySeatRow.autoplay ? "secondary" : "outline"}
+                  className="h-11 rounded-full text-xs"
+                  title="Let the computer roll and move automatically for you"
+                >
+                  <Bot className="size-4" />
+                  {mySeatRow.autoplay ? "Autoplay ON" : "Autoplay OFF"}
+                </Button>
               ) : null}
             </div>
 

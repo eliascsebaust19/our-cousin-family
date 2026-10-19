@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Dices, Loader2, Plus, UserPlus } from "lucide-react";
+import { Dices, Loader2, Plus, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { LUDO_GAME_SELECT, channels } from "@/lib/queries";
@@ -34,13 +34,27 @@ type LudoLobbyProps = {
 const TURN_CHOICES = [30, 60, 120] as const;
 
 export function LudoLobby({ onOpen }: LudoLobbyProps) {
-  const { activeFamily, userId } = useFamily();
+  const { activeFamily, userId, roleInActiveFamily } = useFamily();
   const familyId = activeFamily?.id ?? null;
   const [games, setGames] = useState<LudoGameListItem[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [boardSeats, setBoardSeats] = useState<number>(4);
   const [turnSeconds, setTurnSeconds] = useState<number>(60);
+
+  const deleteGame = async (e: React.MouseEvent, gameId: string) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this game room?")) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("ludo_delete_game", { p_game_id: gameId });
+      if (error) throw error;
+      toast.success("Game room deleted.");
+      await load();
+    } catch (err) {
+      toast.error(`Could not delete room: ${ludoErrorMessage(err)}`);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!familyId) {
@@ -173,41 +187,62 @@ export function LudoLobby({ onOpen }: LudoLobbyProps) {
           {games.map((game) => {
             const filled = game.seats.length;
             const me = game.seats.some((seat) => seat.user_id === userId);
+            const canDelete =
+              game.created_by === userId ||
+              roleInActiveFamily === "owner" ||
+              roleInActiveFamily === "admin";
+
             return (
-              <li key={game.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(game.id)}
-                  className="flex w-full items-center gap-3 rounded-3xl border bg-card p-4 text-left transition-colors hover:border-foreground/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-muted">
-                    <Dices className="size-5" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {ludoBoardLabel(game.board_seats)}
+              <li key={game.id} className="relative group">
+                <div className="flex w-full items-center gap-3 rounded-3xl border bg-card p-4 transition-colors hover:border-foreground/30">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(game.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
+                  >
+                    <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-muted">
+                      <Dices className="size-5" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {ludoBoardLabel(game.board_seats)}
+                        </span>
+                        <StatusPill status={game.status} />
                       </span>
-                      <StatusPill status={game.status} />
+                      <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <UserPlus className="size-3.5" aria-hidden />
+                        {filled}/{game.board_seats} seats filled
+                        {me ? " · you are in" : ""}
+                      </span>
                     </span>
-                    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <UserPlus className="size-3.5" aria-hidden />
-                      {filled}/{game.board_seats} seats filled
-                      {me ? " · you are in" : ""}
+                    <span className="flex shrink-0 -space-x-2 mr-1">
+                      {game.seats.slice(0, 4).map((seat) => (
+                        <span
+                          key={seat.id}
+                          className="size-5 rounded-full border-2 border-card"
+                          style={{ backgroundColor: ludoSeatHex(seat.seat) }}
+                          title={seat.profile?.full_name ?? undefined}
+                          aria-hidden
+                        />
+                      ))}
                     </span>
-                  </span>
-                  <span className="flex shrink-0 -space-x-2">
-                    {game.seats.slice(0, 4).map((seat) => (
-                      <span
-                        key={seat.id}
-                        className="size-5 rounded-full border-2 border-card"
-                        style={{ backgroundColor: ludoSeatHex(seat.seat) }}
-                        title={seat.profile?.full_name ?? undefined}
-                        aria-hidden
-                      />
-                    ))}
-                  </span>
-                </button>
+                  </button>
+
+                  {canDelete && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => deleteGame(e, game.id)}
+                      title="Delete game room"
+                      aria-label="Delete game room"
+                      className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )}
+                </div>
               </li>
             );
           })}

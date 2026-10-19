@@ -34,6 +34,7 @@ create schema if not exists auth;
 create schema if not exists storage;
 
 grant usage on schema public to anon, authenticated, service_role;
+grant usage on schema extensions to anon, authenticated, service_role;
 
 -- --- auth.users --------------------------------------------------------------
 create table if not exists auth.users (

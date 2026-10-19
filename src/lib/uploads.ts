@@ -6,7 +6,8 @@ export const LIMITS = {
   avatar: { bytes: 5 * 1024 * 1024, kinds: ["image"] as const },
   post: { bytes: 100 * 1024 * 1024, kinds: ["image", "video"] as const },
   chatImage: { bytes: 25 * 1024 * 1024, kinds: ["image"] as const },
-  voice: { bytes: 10 * 1024 * 1024, kinds: ["audio"] as const },
+  voice: { bytes: 50 * 1024 * 1024, kinds: ["audio"] as const },
+  receipt: { bytes: 15 * 1024 * 1024, kinds: ["image"] as const },
 } as const;
 
 export class UploadError extends Error {}
@@ -92,6 +93,24 @@ export function uploadChatAttachment(
     file,
     voice ? LIMITS.voice : LIMITS.chatImage,
   );
+}
+
+/** {familyId}/voice/{name} — voice story archive */
+export function uploadVoiceMemory(
+  supabase: SupabaseClient,
+  familyId: string,
+  file: File,
+): Promise<string> {
+  return upload(supabase, "post-media", `${familyId}/voice`, file, LIMITS.voice);
+}
+
+/** {familyId}/receipts/{name} — family fund expense receipts */
+export function uploadFundReceipt(
+  supabase: SupabaseClient,
+  familyId: string,
+  file: File,
+): Promise<string> {
+  return upload(supabase, "post-media", `${familyId}/receipts`, file, LIMITS.receipt);
 }
 
 /**
